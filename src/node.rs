@@ -6,8 +6,8 @@ use super::edge::Edge;
 
 pub struct Node<'a> {
     pub point: Point,
-    pub in_edge: Option<Edge<'a>>,
-    pub out_edge: Option<Edge<'a>>,
+    pub in_edge: Option<&'a Edge<'a>>,
+    pub out_edge: Option<&'a Edge<'a>>,
 }
 
 impl<'a> From<Point> for Node<'a> {
@@ -44,3 +44,19 @@ impl<'a> Node<'a> {
         self.point.y
     }
 }
+
+// pub struct NodeIndex(usize);
+// pub type Nodes = Vec<Node>;
+
+// impl<'a> Index<NodeIndex> for Nodes {
+//     type Output = Node;
+//     fn index(&self, index: NodeIndex) -> &Self::Output {
+//         &self[index.0]
+//     }
+// }
+
+// impl<'a> IndexMut<NodeIndex> for Nodes {
+//     fn index_mut(&mut self, index: NodeIndex) -> &mut Self::Output {
+//         &mut self[index.0]
+//     }
+// }

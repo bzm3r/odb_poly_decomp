@@ -27,7 +27,7 @@ impl<'a> PolyDecomp<'a> {
 
     // Based on:
     // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L156
-    fn new_edge(&mut self, src: Box<&'a Node>, tgt: Box<&'a Node>, side: Side) {
+    fn new_edge(&'a mut self, src: &'a Node<'a>, tgt: &'a Node<'a>, side: Side) {
         self.edges.push(Edge::new(src, tgt, side))
     }
 
