@@ -1,9 +1,23 @@
 use std::cmp::Ordering;
 
+use crate::edges::Side;
+
 #[derive(Clone, Copy, Debug)]
 pub struct Point {
     pub x: isize,
     pub y: isize,
+}
+
+impl Point {
+    // Based on:
+    // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L188
+    pub fn which_side(&self, other: &Point) -> Option<Side> {
+        match self.y.cmp(&other.y) {
+            Ordering::Less => Some(Side::Left),
+            Ordering::Equal => None,
+            Ordering::Greater => Some(Side::Right),
+        }
+    }
 }
 
 impl PartialEq for Point {
@@ -18,10 +32,7 @@ impl PartialOrd for Point {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         match self.y.cmp(&other.y) {
             o @ (Ordering::Less | Ordering::Greater) => Some(o),
-            Ordering::Equal => match self.x.cmp(&other.x) {
-                Ordering::Equal => None,
-                o => Some(o),
-            },
+            Ordering::Equal => Some(self.x.cmp(&other.x)),
         }
     }
 }
@@ -30,13 +41,9 @@ impl Eq for Point {}
 
 impl Ord for Point {
     fn cmp(&self, other: &Self) -> Ordering {
-        if self.eq(other) {
-            Ordering::Equal
-        } else {
-            self.partial_cmp(other).expect(
-                "If points are not equivalent, \
-                then they must have some other order.",
-            )
-        }
+        self.partial_cmp(other).expect(
+            "Points have a total order, so partial_cmp \
+            should not return None.",
+        )
     }
 }
