@@ -1,9 +1,10 @@
 use std::cmp::Ordering;
 
-use crate::point::Point;
+use crate::{edge::Side, point::Point};
 
 use super::edge::Edge;
 
+#[derive(Clone, Copy, Debug)]
 pub struct Node<'a> {
     pub point: Point,
     pub in_edge: Option<&'a Edge<'a>>,
@@ -42,6 +43,16 @@ impl<'a> Node<'a> {
 
     pub fn y(&self) -> isize {
         self.point.y
+    }
+
+    // Based on:
+    // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L188
+    pub fn side(&self, other: &Node) -> Option<Side> {
+        match self.y().cmp(&other.y()) {
+            Ordering::Less => Some(Side::Left),
+            Ordering::Equal => todo!(),
+            Ordering::Greater => Some(Side::Right),
+        }
     }
 }
 

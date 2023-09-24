@@ -7,6 +7,7 @@ pub enum Side {
 }
 
 // Refs to src/target nodes in Edge are
+#[derive(Clone, Copy, Debug)]
 pub struct Edge<'a> {
     pub src: &'a Node<'a>,
     pub tgt: &'a Node<'a>,
@@ -30,7 +31,11 @@ impl<'a> Edge<'a> {
         let max = self.src.y().max(self.tgt.y());
 
         (min <= y && y <= max).then_some({
-            if min < y && y < max { InclusionY::Weak } else { InclusionY::Strict }
+            if min < y && y < max {
+                InclusionY::Weak
+            } else {
+                InclusionY::Strict
+            }
         })
     }
 }

@@ -1,5 +1,6 @@
 use std::cmp::Ordering;
 
+#[derive(Clone, Copy, Debug)]
 pub struct Point {
     pub x: isize,
     pub y: isize,

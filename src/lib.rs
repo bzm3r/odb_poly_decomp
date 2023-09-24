@@ -21,8 +21,9 @@ pub struct PolyDecomp<'a> {
 impl<'a> PolyDecomp<'a> {
     // Based on:
     // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L146
-    fn new_node(&mut self, point: Point) {
-        self.nodes.push(Node::from(point))
+    fn new_node(&mut self, point: Point) -> &'a Node {
+        self.nodes.push(Node::from(point));
+        self.nodes.last().unwrap()
     }
 
     // Based on:
@@ -47,7 +48,32 @@ impl<'a> PolyDecomp<'a> {
         unimplemented!()
     }
 
-    fn decompose(_points: impl IntoIterator<Item = Point>) -> Vec<Rect> {
-        unimplemented!()
+    fn clear(&mut self) {
+        self.nodes.clear();
+        self.edges.clear();
+    }
+
+    fn decompose(&mut self, points: Vec<Point>) -> Vec<Rect> {
+        self.clear();
+        let mut rects = Vec::new();
+        if points.len() < 4 {
+            unimplemented!("need to push remaining points to rect?");
+            return rects;
+        } else {
+            let mut src = self.new_node(points[0]);
+            let mut w = src;
+
+            for i in 1..points.len() {
+                let tgt = self.new_node(points[i]);
+
+                if let Some(side) = src.side(tgt) {
+                    self.new_edge(src, tgt, side);
+                }
+
+                src = tgt;
+            }
+
+            unimplemented!()
+        }
     }
 }
