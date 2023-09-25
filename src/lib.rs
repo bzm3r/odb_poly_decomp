@@ -1,17 +1,34 @@
-use edges::Edges;
+use edge::Edge;
 use point::Point;
 use rect::Rect;
+use scanner::Scanner;
 
-mod edges;
+mod active;
+mod edge;
+mod node;
 mod point;
 mod rect;
+mod scanner;
 
-pub struct PolyDecomp {}
+pub struct Decomposer<'a> {
+    scanner: Scanner<'a>,
+    edges: Vec<Edge<'a>>,
+    node_cursor: usize,
+    edge_cursor: usize,
+}
+
+impl<'a> Decomposer<'a> {
+    fn add_edges(&mut self, edges: &Decomposer) {
+        while let Some(edge) =  {}
+    }
+
+    fn active_edges(&self, scanline: isize) -> active_edges {
+        todo!()
+    }
+}
 
 impl PolyDecomp {
-    fn add_edges(_nodes: &mut Vec<Node>, _scanline: isize) {
-        unimplemented!()
-    }
+    fn add_edges(node_cursor: usize, scanline: isize) {}
 
     fn insert_edge(_edge: Edge, _edges: &mut Vec<Node>) {
         unimplemented!()
@@ -32,9 +49,10 @@ impl PolyDecomp {
             unimplemented!("need to push remaining points to rect?");
             return rects;
         } else {
-            // This initializes edges with "vertical edges for scanline intersection"
-            // Based on (lines: 183 to ):   // Create vertical edges for scanline intersection
-            let edges = Edges::new(points);
+            // This initializes edges with "vertical edges for scanline
+            // intersection" Based on (lines: 183 to ):   // Create
+            // vertical edges for scanline intersection
+            let edges = Decomposer::new(points);
 
             unimplemented!()
         }

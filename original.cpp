@@ -203,44 +203,44 @@ namespace odb
             new_edge(u, w, RIGHT);
 
         std::sort(_active_nodes.begin(), _active_nodes.end(), NodeCompare());
-        std::vector<Node *>::iterator itr = _active_nodes.begin();
-        int scanline = (*itr)->y();
+        std::vector<Node *>::iterator active_nodes_iterator = _active_nodes.begin();
+        int scanline = (*active_nodes_iterator)->y();
 
         for (;;)
         {
-            add_edges(itr, scanline);
+            add_edges(active_nodes_iterator, scanline);
             scan_edges(scanline, rects);
 
-            if (itr == _active_nodes.end())
+            if (active_nodes_iterator == _active_nodes.end())
                 break;
 
-            ++itr;
-            scanline = (*itr)->y();
+            ++active_nodes_iterator;
+            scanline = (*active_nodes_iterator)->y();
             purge_edges(scanline);
         }
 
         clear();
     }
 
-    void PolyDecomp::add_edges(std::vector<Node *>::iterator &itr, int scanline)
+    void PolyDecomp::add_edges(std::vector<Node *>::iterator &active_node_iter, int scanline)
     {
-        std::list<Edge *>::iterator aeitr = _active_edges.begin();
+        std::list<Edge *>::iterator active_edge_iter = _active_edges.begin();
 
-        for (; itr != _active_nodes.end(); ++itr)
+        for (; active_node_iter != _active_nodes.end(); ++active_node_iter)
         {
-            Node *n = *itr;
+            Node *n = *active_node_iter;
 
             if (n->y() != scanline)
             {
-                --itr;
+                --active_node_iter;
                 break;
             }
 
             if (n->_in_edge)
-                insert_edge(n->_in_edge, aeitr);
+                insert_edge(n->_in_edge, active_edge_iter);
 
             if (n->_out_edge)
-                insert_edge(n->_out_edge, aeitr);
+                insert_edge(n->_out_edge, active_edge_iter);
         }
     }
 
