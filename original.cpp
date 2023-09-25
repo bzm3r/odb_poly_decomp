@@ -36,363 +36,348 @@
 
 #include "geom.h"
 
-namespace odb
+namespace odb {
+
+class PolyDecomp
 {
+  enum Side
+  {
+    LEFT,
+    RIGHT
+  };
 
-    class PolyDecomp
+  struct Node;
+
+  struct Edge
+  {
+    Node* _src;
+    Node* _tgt;
+    Side _side;
+    Edge() {}
+    bool inside_y(int y);
+    bool contains_y(int y);
+  };
+
+  struct Node
+  {
+    Point _p;
+    Edge* _in_edge;
+    Edge* _out_edge;
+    Node() {}
+    int x() { return _p.getX(); };
+    int y() { return _p.getY(); };
+  };
+
+  struct NodeCompare
+  {
+    bool operator()(Node* n0, Node* n1)
     {
-        enum Side
-        {
-            LEFT,
-            RIGHT
-        };
+      if (n0->y() < n1->y())
+        return true;
 
-        struct Node;
+      if (n0->y() > n1->y())
+        return false;
 
-        struct Edge
-        {
-            Node *_src;
-            Node *_tgt;
-            Side _side;
-            Edge() {}
-            bool inside_y(int y);
-            bool contains_y(int y);
-        };
+      return n0->x() < n1->x();
+    }
+  };
 
-        struct Node
-        {
-            Point _p;
-            Edge *_in_edge;
-            Edge *_out_edge;
-            Node() {}
-            int x() { return _p.getX(); };
-            int y() { return _p.getY(); };
-        };
+  std::vector<Edge*> _edges;
+  std::vector<Node*> _nodes;
+  std::list<Edge*> _active_edges;
+  std::vector<Node*> _active_nodes;
 
-        struct NodeCompare
-        {
-            bool operator()(Node *n0, Node *n1)
-            {
-                if (n0->y() < n1->y())
-                    return true;
+  Node* new_node(Point p);
+  Edge* new_edge(Node* src, Node* tgt, Side side);
+  void clear();
+  void add_edges(std::vector<Node*>::iterator& itr, int scanline);
+  void insert_edge(Edge* e, std::list<Edge*>::iterator& aeitr);
+  void scan_edges(int scanline, std::vector<Rect>& rects);
+  void purge_edges(int scanline);
 
-                if (n0->y() > n1->y())
-                    return false;
+ public:
+  PolyDecomp();
+  ~PolyDecomp();
 
-                return n0->x() < n1->x();
-            }
-        };
+  void decompose(const std::vector<Point>& points, std::vector<Rect>& rects);
+};
 
-        std::vector<Edge *> _edges;
-        std::vector<Node *> _nodes;
-        std::list<Edge *> _active_edges;
-        std::vector<Node *> _active_nodes;
+inline bool PolyDecomp::Edge::contains_y(int y)
+{
+  int min_y = std::min(_src->y(), _tgt->y());
+  int max_y = std::max(_src->y(), _tgt->y());
+  return (min_y <= y) && (y <= max_y);
+}
 
-        Node *new_node(Point p);
-        Edge *new_edge(Node *src, Node *tgt, Side side);
-        void clear();
-        void add_edges(std::vector<Node *>::iterator &itr, int scanline);
-        void insert_edge(Edge *e, std::list<Edge *>::iterator &aeitr);
-        void scan_edges(int scanline, std::vector<Rect> &rects);
-        void purge_edges(int scanline);
+inline bool PolyDecomp::Edge::inside_y(int y)
+{
+  int min_y = std::min(_src->y(), _tgt->y());
+  int max_y = std::max(_src->y(), _tgt->y());
+  return (min_y < y) && (y < max_y);
+}
 
-    public:
-        PolyDecomp();
-        ~PolyDecomp();
+PolyDecomp::PolyDecomp()
+{
+}
 
-        void decompose(const std::vector<Point> &points, std::vector<Rect> &rects);
-    };
+PolyDecomp::~PolyDecomp()
+{
+  clear();
+}
 
-    inline bool PolyDecomp::Edge::contains_y(int y)
-    {
-        int min_y = std::min(_src->y(), _tgt->y());
-        int max_y = std::max(_src->y(), _tgt->y());
-        return (min_y <= y) && (y <= max_y);
+void PolyDecomp::clear()
+{
+  std::vector<Edge*>::iterator eitr;
+
+  for (eitr = _edges.begin(); eitr != _edges.end(); ++eitr)
+    delete *eitr;
+
+  std::vector<Node*>::iterator nitr;
+
+  for (nitr = _nodes.begin(); nitr != _nodes.end(); ++nitr)
+    delete *nitr;
+
+  _edges.clear();
+  _nodes.clear();
+  _active_edges.clear();
+  _active_nodes.clear();
+}
+
+PolyDecomp::Node* PolyDecomp::new_node(Point p)
+{
+  Node* n = new Node();
+  n->_p = p;
+  n->_in_edge = nullptr;
+  n->_out_edge = nullptr;
+  _nodes.push_back(n);
+  return n;
+}
+
+PolyDecomp::Edge* PolyDecomp::new_edge(Node* src, Node* tgt, Side side)
+{
+  Edge* e = new Edge();
+  e->_side = side;
+  e->_src = src;
+  e->_tgt = tgt;
+  assert(src->_out_edge == nullptr);
+  src->_out_edge = e;
+  assert(tgt->_in_edge == nullptr);
+  tgt->_in_edge = e;
+  _edges.push_back(e);
+  return e;
+}
+
+// assumes polygon points are in clockwise order
+void PolyDecomp::decompose(const std::vector<Point>& points,
+                           std::vector<Rect>& rects)
+{
+  if (points.size() < 4)
+    return;
+
+  Node* u = new_node(points[0]);
+  Node* w = u;
+  _active_nodes.push_back(u);
+
+  int n = points.size();
+
+  // Create vertical edges for scanline intersection
+  for (int i = 1; i < n; ++i) {
+    Node* v = new_node(points[i]);
+    _active_nodes.push_back(v);
+
+    if (u->y() < v->y())
+      new_edge(u, v, LEFT);
+
+    else if (u->y() > v->y())
+      new_edge(u, v, RIGHT);
+
+    u = v;
+  }
+
+  if (u->y() < w->y())
+    new_edge(u, w, LEFT);
+
+  else if (u->y() > w->y())
+    new_edge(u, w, RIGHT);
+
+  std::sort(_active_nodes.begin(), _active_nodes.end(), NodeCompare());
+  std::vector<Node*>::iterator itr = _active_nodes.begin();
+  int scanline = (*itr)->y();
+
+  for (;;) {
+    add_edges(itr, scanline);
+    scan_edges(scanline, rects);
+
+    if (itr == _active_nodes.end())
+      break;
+
+    ++itr;
+    scanline = (*itr)->y();
+    purge_edges(scanline);
+  }
+
+  clear();
+}
+
+void PolyDecomp::add_edges(std::vector<Node*>::iterator& itr, int scanline)
+{
+  std::list<Edge*>::iterator aeitr = _active_edges.begin();
+
+  for (; itr != _active_nodes.end(); ++itr) {
+    Node* n = *itr;
+
+    if (n->y() != scanline) {
+      --itr;
+      break;
     }
 
-    inline bool PolyDecomp::Edge::inside_y(int y)
-    {
-        int min_y = std::min(_src->y(), _tgt->y());
-        int max_y = std::max(_src->y(), _tgt->y());
-        return (min_y < y) && (y < max_y);
+    if (n->_in_edge)
+      insert_edge(n->_in_edge, aeitr);
+
+    if (n->_out_edge)
+      insert_edge(n->_out_edge, aeitr);
+  }
+}
+
+void PolyDecomp::insert_edge(Edge* e, std::list<Edge*>::iterator& aeitr)
+{
+  int x = e->_src->x();
+
+  for (; aeitr != _active_edges.end(); ++aeitr) {
+    Edge* ae = *aeitr;
+
+    if (x < ae->_src->x()) {
+      _active_edges.insert(aeitr, e);
+      return;
+    }
+  }
+
+  _active_edges.insert(aeitr, e);
+}
+
+void PolyDecomp::scan_edges(int scanline, std::vector<Rect>& rects)
+{
+  std::list<Edge*>::iterator itr = _active_edges.begin();
+  std::list<Edge*>::iterator left_itr;
+  std::list<Edge*>::iterator right_itr;
+
+  for (;; ++itr) {
+    Edge* left;
+
+    for (;; ++itr) {
+      if (itr == _active_edges.end())
+        return;
+
+      left = *itr;
+
+      if ((left->_side == LEFT) && (left->_src->y() != scanline)) {
+        left_itr = itr;
+        break;
+      }
     }
 
-    PolyDecomp::PolyDecomp()
-    {
+    Edge* right;
+
+    for (++itr;; ++itr) {
+      if (itr == _active_edges.end())
+        return;
+
+      right = *itr;
+
+      if ((right->_side == RIGHT) && (right->_tgt->y() != scanline)) {
+        right_itr = itr;
+        break;
+      }
     }
 
-    PolyDecomp::~PolyDecomp()
+    if (left->inside_y(scanline) && right->inside_y(scanline))
+      if ((++left_itr) == right_itr)
+        continue;
+
+    if (left->inside_y(scanline))  // split intersected edge
     {
-        clear();
+      Node* u = left->_src;
+      Node* v = new_node(Point(u->x(), scanline));
+      u->_out_edge = nullptr;
+      v->_out_edge = left;
+      left->_src = v;
+      left = new_edge(u, v, LEFT);
     }
 
-    void PolyDecomp::clear()
+    if (right->inside_y(scanline))  // split intersected edge
     {
-        std::vector<Edge *>::iterator eitr;
-
-        for (eitr = _edges.begin(); eitr != _edges.end(); ++eitr)
-            delete *eitr;
-
-        std::vector<Node *>::iterator nitr;
-
-        for (nitr = _nodes.begin(); nitr != _nodes.end(); ++nitr)
-            delete *nitr;
-
-        _edges.clear();
-        _nodes.clear();
-        _active_edges.clear();
-        _active_nodes.clear();
+      Node* w = right->_tgt;
+      Node* v = new_node(Point(w->x(), scanline));
+      right->_tgt = v;
+      v->_in_edge = right;
+      w->_in_edge = nullptr;
+      right = new_edge(v, w, RIGHT);
     }
 
-    PolyDecomp::Node *PolyDecomp::new_node(Point p)
-    {
-        Node *n = new Node();
-        n->_p = p;
-        n->_in_edge = nullptr;
-        n->_out_edge = nullptr;
-        _nodes.push_back(n);
-        return n;
+    Rect r(left->_src->_p, right->_src->_p);
+    rects.push_back(r);
+  }
+}
+
+void PolyDecomp::purge_edges(int scanline)
+{
+  std::list<Edge*>::iterator itr = _active_edges.begin();
+
+  while (itr != _active_edges.end()) {
+    Edge* e = *itr;
+    if (e->contains_y(scanline))
+      ++itr;
+    else
+      itr = _active_edges.erase(itr);
+  }
+}
+
+void decompose_polygon(const std::vector<Point>& points,
+                       std::vector<Rect>& rects)
+{
+  PolyDecomp decomp;
+  decomp.decompose(points, rects);
+}
+
+// See "Orientation of a simple polygon" in
+// https://en.wikipedia.org/wiki/Curve_orientation
+// The a, b, c point names are used to match the wiki page
+bool polygon_is_clockwise(const std::vector<Point>& P)
+{
+  if (P.size() < 3)
+    return false;
+
+  int n = P.size();
+
+  // find a point on the convex hull of the polygon
+  // Here we use the lowest-most in Y with lowest in X as a tie breaker
+  int yMin = std::numeric_limits<int>::max();
+  int xMin = std::numeric_limits<int>::max();
+  int b = 0;  // the index of the point we are seeking
+  for (int i = 0; i < n; ++i) {
+    int x = P[i].x();
+    int y = P[i].y();
+    if (y < yMin || (y == yMin && x < xMin)) {
+      b = i;
+      yMin = y;
+      xMin = x;
     }
+  }
 
-    PolyDecomp::Edge *PolyDecomp::new_edge(Node *src, Node *tgt, Side side)
-    {
-        Edge *e = new Edge();
-        e->_side = side;
-        e->_src = src;
-        e->_tgt = tgt;
-        assert(src->_out_edge == nullptr);
-        src->_out_edge = e;
-        assert(tgt->_in_edge == nullptr);
-        tgt->_in_edge = e;
-        _edges.push_back(e);
-        return e;
-    }
+  int a = b > 0 ? b - 1 : n - 1;  // previous pt to b
+  int c = b < n - 1 ? b + 1 : 0;  // next pt to b
 
-    // assumes polygon points are in clockwise order
-    void PolyDecomp::decompose(const std::vector<Point> &points,
-                               std::vector<Rect> &rects)
-    {
-        if (points.size() < 4)
-            return;
+  double xa = P[a].getX();
+  double ya = P[a].getY();
 
-        Node *u = new_node(points[0]);
-        Node *w = u;
-        _active_nodes.push_back(u);
+  double xb = P[b].getX();
+  double yb = P[b].getY();
 
-        int n = points.size();
+  double xc = P[c].getX();
+  double yc = P[c].getY();
 
-        // Create vertical edges for scanline intersection
-        for (int i = 1; i < n; ++i)
-        {
-            Node *v = new_node(points[i]);
-            _active_nodes.push_back(v);
+  double det = (xb * yc + xa * yb + ya * xc) - (ya * xb + yb * xc + xa * yc);
+  return det < 0.0;
+}
 
-            if (u->y() < v->y())
-                new_edge(u, v, LEFT);
-
-            else if (u->y() > v->y())
-                new_edge(u, v, RIGHT);
-
-            u = v;
-        }
-
-        if (u->y() < w->y())
-            new_edge(u, w, LEFT);
-
-        else if (u->y() > w->y())
-            new_edge(u, w, RIGHT);
-
-        std::sort(_active_nodes.begin(), _active_nodes.end(), NodeCompare());
-        std::vector<Node *>::iterator active_nodes_iterator = _active_nodes.begin();
-        int scanline = (*active_nodes_iterator)->y();
-
-        for (;;)
-        {
-            add_edges(active_nodes_iterator, scanline);
-            scan_edges(scanline, rects);
-
-            if (active_nodes_iterator == _active_nodes.end())
-                break;
-
-            ++active_nodes_iterator;
-            scanline = (*active_nodes_iterator)->y();
-            purge_edges(scanline);
-        }
-
-        clear();
-    }
-
-    void PolyDecomp::add_edges(std::vector<Node *>::iterator &active_node_iter, int scanline)
-    {
-        std::list<Edge *>::iterator active_edge_iter = _active_edges.begin();
-
-        for (; active_node_iter != _active_nodes.end(); ++active_node_iter)
-        {
-            Node *n = *active_node_iter;
-
-            if (n->y() != scanline)
-            {
-                --active_node_iter;
-                break;
-            }
-
-            if (n->_in_edge)
-                insert_edge(n->_in_edge, active_edge_iter);
-
-            if (n->_out_edge)
-                insert_edge(n->_out_edge, active_edge_iter);
-        }
-    }
-
-    void PolyDecomp::insert_edge(Edge *e, std::list<Edge *>::iterator &aeitr)
-    {
-        int x = e->_src->x();
-
-        for (; aeitr != _active_edges.end(); ++aeitr)
-        {
-            Edge *ae = *aeitr;
-
-            if (x < ae->_src->x())
-            {
-                _active_edges.insert(aeitr, e);
-                return;
-            }
-        }
-
-        _active_edges.insert(aeitr, e);
-    }
-
-    void PolyDecomp::scan_edges(int scanline, std::vector<Rect> &rects)
-    {
-        std::list<Edge *>::iterator active_edge_iter = _active_edges.begin();
-        std::list<Edge *>::iterator left_itr;
-        std::list<Edge *>::iterator right_itr;
-
-        for (;; ++active_edge_iter)
-        {
-            Edge *left;
-
-            for (;; ++active_edge_iter)
-            {
-                if (active_edge_iter == _active_edges.end())
-                    return;
-
-                left = *active_edge_iter;
-
-                if ((left->_side == LEFT) && (left->_src->y() != scanline))
-                {
-                    left_itr = active_edge_iter;
-                    break;
-                }
-            }
-
-            Edge *right;
-
-            for (++active_edge_iter;; ++active_edge_iter)
-            {
-                if (active_edge_iter == _active_edges.end())
-                    return;
-
-                right = *active_edge_iter;
-
-                if ((right->_side == RIGHT) && (right->_tgt->y() != scanline))
-                {
-                    right_itr = active_edge_iter;
-                    break;
-                }
-            }
-
-            if (left->inside_y(scanline) && right->inside_y(scanline))
-                if ((++left_itr) == right_itr)
-                    continue;
-
-            if (left->inside_y(scanline)) // split intersected edge
-            {
-                Node *u = left->_src;
-                Node *v = new_node(Point(u->x(), scanline));
-                u->_out_edge = nullptr;
-                v->_out_edge = left;
-                left->_src = v;
-                left = new_edge(u, v, LEFT);
-            }
-
-            if (right->inside_y(scanline)) // split intersected edge
-            {
-                Node *w = right->_tgt;
-                Node *v = new_node(Point(w->x(), scanline));
-                right->_tgt = v;
-                v->_in_edge = right;
-                w->_in_edge = nullptr;
-                right = new_edge(v, w, RIGHT);
-            }
-
-            Rect r(left->_src->_p, right->_src->_p);
-            rects.push_back(r);
-        }
-    }
-
-    void PolyDecomp::purge_edges(int scanline)
-    {
-        std::list<Edge *>::iterator itr = _active_edges.begin();
-
-        while (itr != _active_edges.end())
-        {
-            Edge *e = *itr;
-            if (e->contains_y(scanline))
-                ++itr;
-            else
-                itr = _active_edges.erase(itr);
-        }
-    }
-
-    void decompose_polygon(const std::vector<Point> &points,
-                           std::vector<Rect> &rects)
-    {
-        PolyDecomp decomp;
-        decomp.decompose(points, rects);
-    }
-
-    // See "Orientation of a simple polygon" in
-    // https://en.wikipedia.org/wiki/Curve_orientation
-    // The a, b, c point names are used to match the wiki page
-    bool polygon_is_clockwise(const std::vector<Point> &P)
-    {
-        if (P.size() < 3)
-            return false;
-
-        int n = P.size();
-
-        // find a point on the convex hull of the polygon
-        // Here we use the lowest-most in Y with lowest in X as a tie breaker
-        int yMin = std::numeric_limits<int>::max();
-        int xMin = std::numeric_limits<int>::max();
-        int b = 0; // the index of the point we are seeking
-        for (int i = 0; i < n; ++i)
-        {
-            int x = P[i].x();
-            int y = P[i].y();
-            if (y < yMin || (y == yMin && x < xMin))
-            {
-                b = i;
-                yMin = y;
-                xMin = x;
-            }
-        }
-
-        int a = b > 0 ? b - 1 : n - 1; // previous pt to b
-        int c = b < n - 1 ? b + 1 : 0; // next pt to b
-
-        double xa = P[a].getX();
-        double ya = P[a].getY();
-
-        double xb = P[b].getX();
-        double yb = P[b].getY();
-
-        double xc = P[c].getX();
-        double yc = P[c].getY();
-
-        double det = (xb * yc + xa * yb + ya * xc) - (ya * xb + yb * xc + xa * yc);
-        return det < 0.0;
-    }
-
-} // namespace odb
+}  // namespace odb

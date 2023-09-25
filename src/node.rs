@@ -10,6 +10,8 @@ pub struct Node<'a> {
 }
 
 impl<'a> Node<'a> {
+    pub fn new(point: Point, in_edge: Option<&'a Edge<'a>>, out_edge: Option<&'a Edge<'a>>) -> Self { Self { point, in_edge: in_edge.into(), out_edge: out_edge.into() } }
+
     #[inline]
     pub fn set_in_edge(&self, inc: &'a Edge) {
         self.in_edge.replace(Some(inc));
@@ -45,17 +47,8 @@ impl<'a> Node<'a> {
         self.out_edge.get()
     }
 
-    // Based on: 
     #[inline]
-    pub fn split_node(point: Point, scanline: isize) -> Self {
-        Self {
-            point: Point::new(point.x, scanline),
-            ..Node::default()
-        }
-    }
-
-    #[inline]
-    pub fn transfer_out_edge_to(&self, other: &Node<'a>) {
+    pub fn out_edge_transfer_to(&self, other: &Node<'a>) {
         let this = self.out_edge.take();
         other.out_edge.replace(this);
     }
