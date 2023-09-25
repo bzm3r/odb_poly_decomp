@@ -53,6 +53,11 @@ pub trait ActiveVec<'a>: Clone + Debug + Default {
     }
 
     fn with_capacity(capacity: usize) -> Self;
+
+    #[inline]
+    fn len(&self) -> usize {
+        self.items().len()
+    }
 }
 
 #[derive(Clone, Debug, Default)]

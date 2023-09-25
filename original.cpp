@@ -264,40 +264,40 @@ namespace odb
 
     void PolyDecomp::scan_edges(int scanline, std::vector<Rect> &rects)
     {
-        std::list<Edge *>::iterator itr = _active_edges.begin();
+        std::list<Edge *>::iterator active_edge_iter = _active_edges.begin();
         std::list<Edge *>::iterator left_itr;
         std::list<Edge *>::iterator right_itr;
 
-        for (;; ++itr)
+        for (;; ++active_edge_iter)
         {
             Edge *left;
 
-            for (;; ++itr)
+            for (;; ++active_edge_iter)
             {
-                if (itr == _active_edges.end())
+                if (active_edge_iter == _active_edges.end())
                     return;
 
-                left = *itr;
+                left = *active_edge_iter;
 
                 if ((left->_side == LEFT) && (left->_src->y() != scanline))
                 {
-                    left_itr = itr;
+                    left_itr = active_edge_iter;
                     break;
                 }
             }
 
             Edge *right;
 
-            for (++itr;; ++itr)
+            for (++active_edge_iter;; ++active_edge_iter)
             {
-                if (itr == _active_edges.end())
+                if (active_edge_iter == _active_edges.end())
                     return;
 
-                right = *itr;
+                right = *active_edge_iter;
 
                 if ((right->_side == RIGHT) && (right->_tgt->y() != scanline))
                 {
-                    right_itr = itr;
+                    right_itr = active_edge_iter;
                     break;
                 }
             }

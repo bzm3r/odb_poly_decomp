@@ -2,13 +2,17 @@ use std::cmp::Ordering;
 
 use crate::scanner::Side;
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct Point {
     pub x: isize,
     pub y: isize,
 }
 
 impl Point {
+    pub fn new(x: isize, y: isize) -> Self {
+        Self { x, y }
+    }
+
     // Based on:
     // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L188
     pub fn which_side(&self, other: &Point) -> Option<Side> {

@@ -1,14 +1,13 @@
 use edge::Edge;
 use point::Point;
-use rect::Rect;
 use scanner::Scanner;
 
 mod active;
 mod edge;
 mod node;
 mod point;
-mod rect;
 mod scanner;
+mod rect;
 
 pub struct Decomposer<'a> {
     scanner: Scanner<'a>,
@@ -19,7 +18,9 @@ pub struct Decomposer<'a> {
 
 impl<'a> Decomposer<'a> {
     fn add_edges(&mut self, edges: &Decomposer) {
-        while let Some(edge) =  {}
+        while let Some(edge) =  {
+            self.edge == 
+        }
     }
 
     fn active_edges(&self, scanline: isize) -> active_edges {

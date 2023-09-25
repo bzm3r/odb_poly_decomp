@@ -1,23 +1,23 @@
-use std::cmp::Ordering;
+use std::{cell::Cell, cmp::Ordering};
 
 use crate::{edge::Edge, point::Point, scanner::Side};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct Node<'a> {
     point: Point,
-    in_edge: Option<&'a Edge<'a>>,
-    out_edge: Option<&'a Edge<'a>>,
+    in_edge: Cell<Option<&'a Edge<'a>>>,
+    out_edge: Cell<Option<&'a Edge<'a>>>,
 }
 
 impl<'a> Node<'a> {
     #[inline]
     pub fn set_in_edge(&self, inc: &'a Edge) {
-        self.in_edge.replace(inc);
+        self.in_edge.replace(Some(inc));
     }
 
     #[inline]
     pub fn set_out_edge(&self, out: &'a Edge) {
-        self.out_edge.replace(out);
+        self.out_edge.replace(Some(out));
     }
 
     #[inline]
@@ -37,12 +37,27 @@ impl<'a> Node<'a> {
 
     #[inline]
     pub fn in_edge(&self) -> Option<&Edge<'_>> {
-        self.in_edge
+        self.in_edge.get()
     }
 
     #[inline]
     pub fn out_edge(&self) -> Option<&Edge<'_>> {
-        self.out_edge
+        self.out_edge.get()
+    }
+
+    // Based on: 
+    #[inline]
+    pub fn split_node(point: Point, scanline: isize) -> Self {
+        Self {
+            point: Point::new(point.x, scanline),
+            ..Node::default()
+        }
+    }
+
+    #[inline]
+    pub fn transfer_out_edge_to(&self, other: &Node<'a>) {
+        let this = self.out_edge.take();
+        other.out_edge.replace(this);
     }
 }
 
@@ -50,8 +65,8 @@ impl<'a> From<Point> for Node<'a> {
     fn from(point: Point) -> Self {
         Node {
             point,
-            in_edge: None,
-            out_edge: None,
+            in_edge: None.into(),
+            out_edge: None.into(),
         }
     }
 }
