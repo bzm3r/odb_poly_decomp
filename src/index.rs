@@ -2,7 +2,23 @@ use std::cell::Cell;
 use std::fmt::Debug;
 use std::ops::Deref;
 
-use crate::edge::Edge;
+
+/// A vector that can only be pushed to: items cannot be removed.
+///
+/// Furthermore, items can only be indexed by types that implement
+/// [`StableIndex`]. Examples of such indices are numerical indices (`usize`)
+/// into a vector.
+///
+/// Together, `PushOnlyVec` and [`StableIndex`] provide
+pub struct PushOnlyVec<T> {
+    vec: CellOpt<Vec<T>>,
+}
+
+impl<T> PushOnlyVec<T> {
+    pub fn push(&self, item: T)
+}
+
+
 
 pub trait StableIndex:
     Clone + Copy + Debug + Default + Deref<Target = CellOpt<usize>>
@@ -28,33 +44,33 @@ impl From<&NodeIdx> for Option<usize> {
 }
 
 pub struct CellOpt<T: Clone + Debug> {
-    slot: Cell<Option<T>>,
+    cell: Cell<Option<T>>,
 }
 
 impl<T: Clone + Debug + Copy> CellOpt<T> {
     pub fn get(&self) -> Option<T> {
-        self.slot.get()
+        self.cell.get()
     }
 }
 
 impl<T: Clone + Debug> From<T> for CellOpt<T> {
     fn from(value: T) -> Self {
         CellOpt {
-            slot: Cell::new(value.into()),
+            cell: Cell::new(value.into()),
         }
     }
 }
 
 impl<T: Clone + Debug> From<Option<T>> for CellOpt<T> {
     fn from(value: Option<T>) -> Self {
-        CellOpt { slot: value.into() }
+        CellOpt { cell: value.into() }
     }
 }
 
 impl<T: Clone + Debug> Default for CellOpt<T> {
     fn default() -> Self {
         CellOpt {
-            slot: Cell::new(None),
+            cell: Cell::new(None),
         }
     }
 }
@@ -90,7 +106,7 @@ impl<T: Clone + Debug> CellOpt<T> {
     #[inline]
     pub fn new(value: T) -> Self {
         Self {
-            slot: Cell::new(value.into()),
+            cell: Cell::new(value.into()),
         }
     }
 
@@ -132,7 +148,7 @@ impl<T: Clone + Debug> CellOpt<T> {
 
     #[inline]
     pub fn take(&self) -> Result<T, ValueError> {
-        self.slot.take().ok_or(ValueError::Empty)
+        self.cell.take().ok_or(ValueError::Empty)
     }
 
     #[inline]
@@ -147,6 +163,6 @@ impl<T: Clone + Debug> CellOpt<T> {
 
     #[inline]
     pub fn replace(&self, value: impl Into<Option<T>>) {
-        self.slot.replace(value.into());
+        self.cell.replace(value.into());
     }
 }
