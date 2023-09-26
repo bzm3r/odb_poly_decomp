@@ -1,12 +1,23 @@
 use std::cell::Cell;
 
-use crate::{node::Node, scanner::Side};
+use crate::{index::{NodeIdx, EdgeIdx}, node::{Node, Nodes}, scanner::Side};
+
+#[derive(Clone, Debug, Default)]
+pub struct Edges<'a>(Vec<Edge<'a>>);
+
+impl<'a> Edges<'a> {
+    pub fn get(&self, idx: &EdgeIdx) -> Option<&'a Edge> {
+        let ix: Option<usize> = idx.into();
+        ix.and_then(|ix| self.0.get(ix))
+    }
+}
 
 /// An edge from source to target.
 #[derive(Clone, Debug)]
 pub struct Edge<'a> {
-    pub source: Cell<Option<&'a Node>>,
-    pub target: Cell<Option<&Node>>,
+    pub node_vec: &'a Nodes<'a>,
+    pub source: NodeIdx,
+    pub target: NodeIdx,
     pub side: Side,
 }
 
@@ -17,16 +28,23 @@ pub enum Containment {
 }
 
 impl<'a> Edge<'a> {
-    pub fn new(source: &Node, target: &Node, side: Side) -> Self {
+    pub fn new(
+        node_vec: &'a Vec<Node<'a>>,
+        source: NodeIdx,
+        target: NodeIdx,
+        side: Side,
+    ) -> Self {
         Self {
             source: Cell::new(source.into()),
             target: Cell::new(target.into()),
             side,
+            node_vec,
         }
     }
 
     #[inline]
     pub fn src_x(&self) -> isize {
+        self.Vec<Node<'a>>
         self.source.get().unwrap().x()
     }
 

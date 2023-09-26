@@ -1,19 +1,35 @@
-use std::{cell::Cell, cmp::Ordering};
+use std::{cmp::Ordering, ops::Deref};
 
-use crate::{edge::Edge, point::Point, scanner::Side};
+use crate::{
+    edge::{Edge, Edges},
+    index::{EdgeIdx, NodeIdx},
+    point::Point,
+    scanner::Side,
+};
+
+#[derive(Clone, Debug, Default)]
+pub struct Nodes<'a>(Vec<Node<'a>>);
+
+impl<'a> Nodes<'a> {
+    pub fn get(&self, idx: &NodeIdx) -> Option<&'a Node<'a>> {
+        let ix: Option<usize> = idx.into();
+        ix.and_then(|ix| self.0.get(ix))
+    }
+}
 
 #[derive(Clone, Debug, Default)]
 pub struct Node<'a> {
+    edge_vec: &'a Edges<'a>,
     pub point: Point,
-    inc_edge: Cell<Option<&'a Edge<'a>>>,
-    out_edge: Cell<Option<&'a Edge<'a>>>,
+    inc_edge: EdgeIdx,
+    out_edge: EdgeIdx,
 }
 
 impl<'a> Node<'a> {
     pub fn new(
         point: Point,
-        inc_edge: Option<&'a Edge<'a>>,
-        out_edge: Option<&'a Edge<'a>>,
+        inc_edge: Option<EdgeIdx>,
+        out_edge: Option<EdgeIdx>,
     ) -> Self {
         Self {
             point,
@@ -23,17 +39,17 @@ impl<'a> Node<'a> {
     }
 
     #[inline]
-    pub fn set_inc_edge(&'a self, inc: &Edge) {
+    pub fn set_inc_edge(&self, inc: &Edge) {
         self.inc_edge.replace(Some(inc));
     }
 
     #[inline]
-    pub fn set_out_edge(&'a self, out: &Edge) {
+    pub fn set_out_edge(&self, out: &Edge) {
         self.out_edge.replace(Some(out));
     }
 
     #[inline]
-    pub fn which_side(&self, other: &'a Node) -> Option<Side> {
+    pub fn which_side(&self, other: &Node) -> Option<Side> {
         self.point.which_side(&other.point)
     }
 
@@ -68,7 +84,7 @@ impl<'a> Node<'a> {
     }
 }
 
-impl<'a> From<Point> for Node<'a> {
+impl From<Point> for Node {
     fn from(point: Point) -> Self {
         Node {
             point,
@@ -78,22 +94,22 @@ impl<'a> From<Point> for Node<'a> {
     }
 }
 
-impl<'a> PartialOrd for Node<'a> {
+impl PartialOrd for Node {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         self.point.partial_cmp(&other.point)
     }
 }
 
-impl<'a> PartialEq for Node<'a> {
+impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
         self.point.eq(&other.point)
     }
 }
 
-impl<'a> Ord for Node<'a> {
+impl Ord for Node {
     fn cmp(&self, other: &Self) -> Ordering {
         self.point.cmp(&other.point)
     }
 }
 
-impl<'a> Eq for Node<'a> {}
+impl Eq for Node {}
