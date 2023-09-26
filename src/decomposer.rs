@@ -1,22 +1,15 @@
 use std::{error::Error, fmt::Display};
 
-use crate::{
-    active::{ActiveEdges, ActiveNodes, ActiveVec},
-    edge::Edge,
-    node::Node,
-    point::Point,
-    rect::Rect,
-};
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Side {
-    Left,
-    Right,
-}
+use crate::active::{ActiveEdges, ActiveNodes, ActiveVec};
+use crate::edge::Edge;
+use crate::geometry::{Geometry, Side};
+use crate::point::Point;
+use crate::rect::Rect;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DecompErr {
     NotEnoughPoints,
+    FailedScanlineUpdate,
 }
 
 impl Display for DecompErr {
@@ -27,80 +20,42 @@ impl Display for DecompErr {
 
 impl Error for DecompErr {}
 
-/// Edge structure of the rectilinear polygon.
-///
-/// Each edge is a `Segment`: which is a source point, along with some optional,
-/// edge defining information.
 #[derive(Clone, Debug, Default)]
-pub struct Scanner<'a> {
-    nodes: Vec<Node<'a>>,
-    edges: Vec<Edge<'a>>,
+pub struct Decomposer<'a> {
     active_nodes: ActiveNodes<'a>,
     active_edges: ActiveEdges<'a>,
     scanline: isize,
 }
 
-impl<'a> Scanner<'a> {
+impl<'a> Decomposer<'a> {
+    fn new(geometry: &Geometry) -> Result<Self, DecompErr> {
+        let active_nodes: ActiveNodes =
+            geometry.iter_nodes().map(|node| unimplemented!());
+        let active_edges: ActiveEdges =
+            geometry.iter_edges().map(|edge| unimplemented!());
+        let scanline = active_nodes
+            .scanline()
+            .ok_or(DecompErr::FailedScanlineUpdate)?;
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#203
+        active_nodes.sort();
+        Ok(Self {
+            active_nodes,
+            active_edges,
+            // Based on:
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#205
+            scanline,
+        })
+    }
+
     #[inline]
-    fn empty(n_points: usize) -> Self {
-        let capacity = 2 * n_points;
-        Scanner {
-            nodes: Vec::with_capacity(capacity),
-            edges: Vec::with_capacity(capacity),
+    fn empty(capacity: usize) -> Self {
+        let capacity = 2 * capacity;
+        Decomposer {
             active_nodes: ActiveNodes::with_capacity(capacity),
             active_edges: ActiveEdges::with_capacity(capacity),
             scanline: 0,
         }
-    }
-
-    #[inline]
-    fn node(&self, ix: usize) -> &Node {
-        &self.nodes[ix]
-    }
-
-    #[inline]
-    fn edge(&self, ix: usize) -> &Edge {
-        &self.edges[ix]
-    }
-
-    #[inline]
-    fn get<T, F: Fn(&Scanner, usize) -> T>(&self, f: F, ix: usize) -> T {
-        f(&self, ix)
-    }
-
-    #[inline]
-    fn get_ordered<T, F: Fn(&Scanner, usize) -> T>(
-        &self,
-        f: F,
-        order: Vec<usize>,
-        ix: usize,
-    ) -> T {
-        self.get(f, order[ix])
-    }
-
-    #[inline]
-    fn new_node(
-        &mut self,
-        point: Point,
-        in_edge: Option<&Edge>,
-        out_edge: Option<&Edge>,
-        active: bool,
-    ) -> &Node {
-        self.nodes.push(Node::new(point, in_edge, out_edge));
-        let node = self.nodes.last().unwrap();
-        if active {
-            self.active_nodes.insert(node);
-        }
-        node
-    }
-
-    fn new_edge(&mut self, source: &Node, target: &Node, side: Side) -> &Edge {
-        let edge = Edge::new(source, target, side);
-        self.edges.push(edge);
-        let edge = self.edges.last().unwrap();
-        source.set_out_edge(edge);
-        target.set_inc_edge(edge);
-        edge
     }
 
     // Based on: it is called add_edges in the original, but this is a misnomer
@@ -139,7 +94,11 @@ impl<'a> Scanner<'a> {
         None
     }
 
-    fn scan_edges(&mut self, mut rects: Vec<Rect>) -> Vec<Rect> {
+    fn scan_edges(
+        &mut self,
+        geometry: &mut Geometry,
+        mut rects: Vec<Rect>,
+    ) -> Vec<Rect> {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L258-320
 
@@ -185,11 +144,11 @@ impl<'a> Scanner<'a> {
             if left.inside_y(self.scanline) {
                 // The existing edge is not deleted, so its sufficient to do
                 // an overwrite of the variable that used to contain it?
-                left = self.split_edge(left, Side::Left);
+                left = self.split_edge(geometry, left, Side::Left);
             }
 
             if right.inside_y(self.scanline) {
-                right = self.split_edge(right, Side::Right);
+                right = self.split_edge(geometry, right, Side::Right);
             }
 
             rects.push(Rect::new(
@@ -205,7 +164,12 @@ impl<'a> Scanner<'a> {
     // set source/target appropriately. (Essentially, must view an edges
     // end points not only as source/target, but *just* as endpoints, which
     // are then split).
-    fn split_edge(&mut self, edge: &Edge, side: Side) -> &Edge {
+    fn split_edge(
+        &mut self,
+        geometry: &mut Geometry,
+        edge: &Edge,
+        side: Side,
+    ) -> &Edge {
         // "split intersected edge"
         let existing_node = match side {
             Side::Left => edge.source(),
@@ -214,12 +178,11 @@ impl<'a> Scanner<'a> {
         .unwrap();
 
         // Based on: https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L300
-        // confirm that `active` should be false for the following call:
-        let new_node = self.new_node(
+        // confirm that the edge should not be added to active nodes list
+        let new_node = geometry.new_node(
             Point::new(existing_node.x(), self.scanline),
             None,
             None,
-            false,
         );
 
         // Based on:
@@ -229,44 +192,14 @@ impl<'a> Scanner<'a> {
                 edge.set_source(new_node);
                 existing_node.take_out_edge();
                 new_node.set_out_edge(edge);
-                self.new_edge(existing_node, new_node, side)
+                geometry.new_edge(existing_node, new_node, side)
             }
             Side::Right => {
                 edge.set_target(new_node);
                 existing_node.take_in_edge();
                 new_node.set_inc_edge(edge);
-                self.new_edge(new_node, existing_node, side)
+                geometry.new_edge(new_node, existing_node, side)
             }
-        }
-    }
-
-    /// For use when a scanner is being initialized.
-    fn initialize_nodes(&mut self, points: Vec<Point>) {
-        // Based on:
-        // 1) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L179
-        // 2) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L186
-        // note carefully: `true` is passed for active in call to new node
-        points.into_iter().for_each(|p| {
-            self.new_node(p, None, None, true);
-        });
-    }
-
-    /// For use when a scanner is being intialized.
-    fn initialize_edges(&mut self) {
-        // Based on:
-        // 1) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L189
-        // 2) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L192
-        // 3) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L198
-        // 4) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L201
-        let n_nodes = self.nodes.len();
-        debug_assert!(self.nodes.len() > 3);
-        let (s, t) = (0, 1);
-        loop {
-            let (source, target) = (&self.nodes[s], &self.nodes[t]);
-            if let Some(side) = source.which_side(target) {
-                self.new_edge(&source, &target, side);
-            }
-            let (s, t) = (t, (t + 1) % n_nodes);
         }
     }
 
@@ -298,25 +231,10 @@ impl<'a> Scanner<'a> {
     ///
     /// Based on:
     /// https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L183
-    pub fn new(points: Vec<Point>) -> Result<Self, DecompErr> {
-        if points.len() < 4 {
-            return Err(DecompErr::NotEnoughPoints);
-        } else {
-            let mut scanner = Self::empty(points.len());
-            scanner.initialize_nodes(points);
-            scanner.initialize_edges();
-            // Based on:
-            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#203
-            scanner.active_nodes.sort();
-            // Based on:
-            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#205
-            scanner.update_scanline();
+    pub fn decompose(points: Vec<Point>) -> Result<Vec<Rect>, DecompErr> {
+        let mut geometry = Geometry::new(points)?;
+        let mut decomposer = Self::new(&geometry)?;
 
-            Ok(scanner)
-        }
-    }
-
-    pub fn decompose(&mut self) -> Vec<Rect> {
         // TODO: figure out whether its worth pre-allocating rects. If yes, then
         // what value should we pick? Currently just picked 2 * n_points...
         //
@@ -336,15 +254,15 @@ impl<'a> Scanner<'a> {
         // * n_nodes = (6 * n_points) rects
         //
         // Worth pre-allocating? Not sure.
-        let mut rects = Vec::with_capacity(self.nodes.capacity());
+        let mut rects = Vec::with_capacity(geometry.len_nodes());
         loop {
             // Based on:
             // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L208
-            self.add_active_edges();
+            decomposer.add_active_edges();
 
-            rects = self.scan_edges(rects);
+            rects = decomposer.scan_edges(&mut geometry, rects);
 
-            if self.active_nodes.finished() {
+            if decomposer.active_nodes.finished() {
                 break;
             } else {
                 // TODO: do we need something that does what line 214 does:
@@ -352,12 +270,12 @@ impl<'a> Scanner<'a> {
 
                 // Based on:
                 // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L215
-                self.update_scanline();
+                decomposer.update_scanline();
                 // Based on:
                 // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L216
-                self.purge_active_edges();
+                decomposer.purge_active_edges();
             }
         }
-        rects
+        Ok(rects)
     }
 }

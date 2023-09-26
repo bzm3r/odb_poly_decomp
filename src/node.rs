@@ -1,6 +1,6 @@
 use std::{cell::Cell, cmp::Ordering};
 
-use crate::{edge::Edge, point::Point, scanner::Side};
+use crate::{edge::Edge, point::Point, geometry::Side};
 
 #[derive(Clone, Debug, Default)]
 pub struct Node<'a> {

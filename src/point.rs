@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::scanner::Side;
+use crate::geometry::Side;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Point {

@@ -1,6 +1,6 @@
 use std::cell::Cell;
 
-use crate::{node::Node, scanner::Side};
+use crate::{geometry::Side, node::Node};
 
 /// An edge from source to target.
 #[derive(Clone, Debug)]
