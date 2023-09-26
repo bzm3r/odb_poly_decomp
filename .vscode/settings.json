@@ -1,5 +1,13 @@
 {
     "files.associations": {
         "*.tcc": "cpp"
-    }
+    },
+    "C_Cpp.files.exclude": {
+        "**/.vscode": true,
+        "**/.vs": true,
+        "**/original.cpp": true,
+    },
+    "C_Cpp.codeAnalysis.exclude": {
+        "**/original.cpp": true,
+    },
 }

@@ -4,21 +4,31 @@ use crate::{edge::Edge, point::Point, scanner::Side};
 
 #[derive(Clone, Debug, Default)]
 pub struct Node<'a> {
-    point: Point,
-    in_edge: Cell<Option<&'a Edge<'a>>>,
+    pub point: Point,
+    inc_edge: Cell<Option<&'a Edge<'a>>>,
     out_edge: Cell<Option<&'a Edge<'a>>>,
 }
 
 impl<'a> Node<'a> {
-    pub fn new(point: Point, in_edge: Option<&'a Edge<'a>>, out_edge: Option<&'a Edge<'a>>) -> Self { Self { point, in_edge: in_edge.into(), out_edge: out_edge.into() } }
-
-    #[inline]
-    pub fn set_in_edge(&self, inc: &'a Edge) {
-        self.in_edge.replace(Some(inc));
+    pub fn new(
+        point: Point,
+        inc_edge: Option<&'a Edge<'a>>,
+        out_edge: Option<&'a Edge<'a>>,
+    ) -> Self {
+        Self {
+            point,
+            inc_edge: inc_edge.into(),
+            out_edge: out_edge.into(),
+        }
     }
 
     #[inline]
-    pub fn set_out_edge(&self, out: &'a Edge) {
+    pub fn set_inc_edge(&'a self, inc: &Edge) {
+        self.inc_edge.replace(Some(inc));
+    }
+
+    #[inline]
+    pub fn set_out_edge(&'a self, out: &Edge) {
         self.out_edge.replace(Some(out));
     }
 
@@ -38,19 +48,23 @@ impl<'a> Node<'a> {
     }
 
     #[inline]
-    pub fn in_edge(&self) -> Option<&Edge<'_>> {
-        self.in_edge.get()
+    pub fn in_edge(&self) -> Option<&Edge> {
+        self.inc_edge.get()
     }
 
     #[inline]
-    pub fn out_edge(&self) -> Option<&Edge<'_>> {
+    pub fn out_edge(&self) -> Option<&Edge> {
         self.out_edge.get()
     }
 
     #[inline]
-    pub fn out_edge_transfer_to(&self, other: &Node<'a>) {
-        let this = self.out_edge.take();
-        other.out_edge.replace(this);
+    pub fn take_in_edge(&self) -> Option<&Edge> {
+        self.inc_edge.take()
+    }
+
+    #[inline]
+    pub fn take_out_edge(&self) -> Option<&Edge> {
+        self.out_edge.take()
     }
 }
 
@@ -58,7 +72,7 @@ impl<'a> From<Point> for Node<'a> {
     fn from(point: Point) -> Self {
         Node {
             point,
-            in_edge: None.into(),
+            inc_edge: None.into(),
             out_edge: None.into(),
         }
     }
