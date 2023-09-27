@@ -73,27 +73,35 @@ impl Decomposer {
     // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L222
     fn add_active_edges(&mut self, geometry: &Geometry) {
         // Based on:
-        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L258-320
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L258-L320
+
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L224
         // See also the comment by CTRL+F for PURGE_ACTIVE_EDGES
         self.active_edges.reset_cursor();
         info!("active_edges_cursor: {:?}", self.active_edges.cursor());
+
         // Based on: 1) iterate on active_nodes, based on wherever it is
-        // currently and 2) if the current node's y-marker != scanline, then
-        // we should stop, as we have finished with the set of edges relevant
-        // for this scanline
-        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L226-232
+        // currently and 2) if the current does not not lie on the scanline,
+        // then stop as we have finished with the nodes that lie on the
+        // scanline. https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L226-L232
         while let Some(node) =
             self.active_nodes.next_if(geometry, |geometry, id| {
                 let node = geometry[id];
                 if node.y() == self.scanline {
                     Some(node)
                 } else {
+                    // if node.y() != scanline
                     None
                 }
             })
         {
+            info!(
+                "add_edges: {:?} is on the scanline {} ",
+                node, self.scanline
+            );
             // Based on: add this node's edges to the active edge list
-            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L234-238
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L234-L238
             // TODO: Confirm that this is okay/correct (this is not just
             // inserting into the active edges vec, but also doing some checks
             // later on down the road)
@@ -105,21 +113,21 @@ impl Decomposer {
         }
     }
 
-    fn scan_side_edge(
+    fn scan_for_edge_on_side(
         &mut self,
         geometry: &Geometry,
-        required: Side,
+        side: Side,
     ) -> Option<(Edge, Cursor)> {
         // Based on the general shape of:
-        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L268-277
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L268-L277
 
         // If active_edges.next() returns None (i.e. active_edges' cursor has
-        // reached the end), then this function will return `None`, which will
-        // cause scan edges to return as well through use of the `?` operator.
+        // reached the end), then this function will return `None`, upon which
+        // scan edges will also return.
         while let Some(edge) = self.active_edges.next(geometry) {
             // Based on:
-            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L273-276
-            if edge.side == required && edge.src_y(geometry) != self.scanline {
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L273-L276
+            if edge.side == side && edge.src_y(geometry) != self.scanline {
                 return Some((edge, self.active_edges.cursor()));
             }
         }
@@ -132,7 +140,7 @@ impl Decomposer {
         mut rects: Vec<Rect>,
     ) -> Vec<Rect> {
         // Based on:
-        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L258-320
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L258-L320
         // See also the comment by CTRL+F for PURGE_ACTIVE_EDGES
         self.active_edges.reset_cursor();
 
@@ -141,11 +149,11 @@ impl Decomposer {
         let mut left;
         let mut right;
 
-        while self.active_edges.finished() {
+        while !self.active_edges.finished() {
             // Based on:
-            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L265-277
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L265-L277
             (left, left_cursor) = if let Some((e, c)) =
-                self.scan_side_edge(geometry, Side::Left)
+                self.scan_for_edge_on_side(geometry, Side::Left)
             {
                 (e, c)
             } else {
@@ -154,9 +162,9 @@ impl Decomposer {
             };
 
             // Based on:
-            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L279-290
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L279-L290
             (right, right_cursor) = if let Some((e, c)) =
-                self.scan_side_edge(geometry, Side::Right)
+                self.scan_for_edge_on_side(geometry, Side::Right)
             {
                 (e, c)
             } else {
@@ -164,8 +172,8 @@ impl Decomposer {
                 return rects;
             };
 
-            if left.inside_y(geometry, self.scanline)
-                && right.inside_y(geometry, self.scanline)
+            if left.strictly_contains_scanline(geometry, self.scanline)
+                && right.strictly_contains_scanline(geometry, self.scanline)
             {
                 // https://stackoverflow.com/a/1813008/3486684 sigh, C++
                 left_cursor += 1;
@@ -174,13 +182,13 @@ impl Decomposer {
                 }
             }
 
-            if left.inside_y(geometry, self.scanline) {
+            if left.strictly_contains_scanline(geometry, self.scanline) {
                 // The existing edge is not deleted, so its sufficient to do
                 // an overwrite of the variable that used to contain it?
                 left = self.split_edge(geometry, left.id, Side::Left);
             }
 
-            if right.inside_y(geometry, self.scanline) {
+            if right.strictly_contains_scanline(geometry, self.scanline) {
                 right = self.split_edge(geometry, right.id, Side::Right);
             }
 
@@ -219,7 +227,7 @@ impl Decomposer {
         );
 
         // Based on:
-        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L301-303
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L301-L303
         match side {
             Side::Left => {
                 geometry[existing_edge_id].set_source(new_node_id);
@@ -245,9 +253,16 @@ impl Decomposer {
     #[inline]
     fn purge_active_edges(&mut self, geometry: &Geometry) {
         // Based on:
-        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L322-333
-        self.active_edges
-            .retain_if(|&id| geometry[id].contains_y(geometry, self.scanline));
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L322-L333
+        // The original has to reset the cursor in order to make it point to the
+        // begining of the active edges vector again. We do not need to do this,
+        // as we can just iterate over the entire vector.
+        info!("active edges before purge: {:?}", &self.active_edges);
+        // We should retain if contains_y returns true, otherwise should purge
+        self.active_edges.retain_if(|&id| {
+            geometry[id].contains_scanline(geometry, self.scanline)
+        });
+        info!("active edges after purge: {:?}", &self.active_edges);
         info!("post-purge cursor: {}", self.active_edges.cursor());
         // PURGE_ACTIVE_EDGES
         // Now that we have purged this edge iterator, its cursor is invalid.

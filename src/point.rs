@@ -25,9 +25,14 @@ impl Point {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L188
 
-        // Not really sure why it's called "Left/Right" when it's more "Up/Down"
-        // Should probably rename it. Then again, it doesn't really matter; one
-        // person's up is just another person's Left.
+        // LEFT: this is on a left wall of the polygon (where its y coordinates
+        // are all increasing), and there is a
+        // corresponding right wall.
+        // RIGHT: this is a right wall (where its y-coordinates are all
+        // decreasing) of the polygon, and there is a corresponding left
+        // wall.
+        // Matching LEFT/RIGHT walls can "see each other", without being
+        // visibility being blocked?
         match self.y.cmp(&other.y) {
             Ordering::Less => Some(Side::Left),
             Ordering::Equal => None,

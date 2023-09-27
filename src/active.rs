@@ -31,17 +31,22 @@ where
         self.set_cursor(self.cursor() + 1);
     }
 
+    /// Get the item stored at the specified position, without affecting the
+    /// cursor's value.
     #[inline]
     fn peek_at(&self, ix: usize) -> Option<Self::Id> {
         self.items().get(ix).copied()
     }
 
+    /// Get the item stored at the current cursor's position, without affecting
+    /// the cursor's value.
     #[inline]
     fn peek(&self) -> Option<Self::Id> {
         self.peek_at(self.cursor())
     }
 
-    /// If the next item exists, return it, and increment the cursor.
+    /// If the item at the current cursor's position exists, get it, and
+    /// increment the cursor.
     #[inline]
     fn next(&mut self, geometry: &Geometry) -> Option<Self::Item> {
         if let Some(id) = self.peek() {
@@ -61,7 +66,7 @@ where
         f: F,
     ) -> Option<Self::Item> {
         // Based on:
-        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L229-232
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L229-L232
         let result = self.peek().and_then(|id| f(geometry, id));
         if result.is_some() {
             self.increment();
@@ -105,8 +110,13 @@ impl Debug for ActiveNodes {
             "[{}]",
             self.nodes
                 .iter()
-                .map(|id| id.index().to_string())
-                .fold(String::new(), |a, b| format!("{}, {}", a, b))
+                .enumerate()
+                .map(|(ix, id)| if ix > 0 {
+                    format!(", {}", id.index())
+                } else {
+                    format!("{}", id.index())
+                })
+                .fold(String::new(), |a, b| format!("{}{}", a, b))
         )
     }
 }
@@ -170,8 +180,13 @@ impl Debug for ActiveEdges {
             "[{}]",
             self.edges
                 .iter()
-                .map(|id| id.index().to_string())
-                .fold(String::new(), |a, b| format!("{}, {}", a, b))
+                .enumerate()
+                .map(|(ix, id)| if ix > 0 {
+                    format!(", {}", id.index())
+                } else {
+                    format!("{}", id.index())
+                })
+                .fold(String::new(), |a, b| format!("{}{}", a, b))
         )
     }
 }
@@ -191,6 +206,7 @@ impl ActiveEdges {
         inc: Option<EdgeId>,
         out: Option<EdgeId>,
     ) {
+        // A node might not yet have incoming/outgoing edges set.
         self.maybe_insert(geometry, inc);
         self.maybe_insert(geometry, out);
     }
@@ -219,17 +235,34 @@ impl ActiveVec for ActiveEdges {
         self.cursor = new;
     }
 
-    // Based on: https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L242
     fn insert(&mut self, geometry: &Geometry, id: Self::Id) {
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L242-L256
+
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L244
         let x = geometry[id].src_x(geometry);
 
-        while let Some(_edge) = self.next(geometry) {
-            if x < geometry[id].src_x(geometry) {
-                self.edges.insert(self.cursor(), id);
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L246-L253
+        while let Some(other) = self.next(geometry) {
+            // Based on:
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L249
+            if x < other.src_x(geometry) {
+                // We have to insert at where the cursor was last, because next
+                // returns the item at the current position, and then
+                // increments, while we want the cursor position where the
+                // returned item was at.
+                self.edges.insert(self.cursor() - 1, id);
                 return;
             }
         }
 
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L255
+        // If we are here, active_edges should have reached the end. So,
+        // inserting there should be equivalent to pushing onto the end of the
+        // cursor.
         self.edges.push(id);
     }
 

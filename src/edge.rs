@@ -1,6 +1,7 @@
 use std::fmt::Debug;
 
 use id_arena::Id;
+use tracing::info;
 
 use crate::{
     geometry::{GeometricId, Geometry, Side},
@@ -72,19 +73,44 @@ impl Edge {
         (src_y.min(tgt_y), src_y.max(tgt_y))
     }
 
+    /// Checks if an edge (should be vertical) contains the scanline, whether
+    /// strictly (see below) or not (i.e. including end points).
     #[inline]
-    pub fn contains_y(&self, geometry: &Geometry, y: isize) -> bool {
+    pub fn contains_scanline(
+        &self,
+        geometry: &Geometry,
+        scanline: isize,
+    ) -> bool {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L105
         let (min_y, max_y) = self.min_max_y(geometry);
-        (min_y <= y) && (y <= max_y)
+        let result = (min_y <= scanline) && (scanline <= max_y);
+        info!(
+            "contains_y: ({} <= {} <= {}) == {} => {}",
+            min_y,
+            scanline,
+            max_y,
+            result,
+            match result {
+                true => "should retain",
+                false => "should purge",
+            }
+        );
+        result
     }
 
+    /// Checks if the vertical interval defining this edge strictly contains the
+    /// current scanline. Here, strictly means that the scanline does not
+    /// correspond pass through one of the end points of the edges.
     #[inline]
-    pub fn inside_y(&self, geometry: &Geometry, y: isize) -> bool {
+    pub fn strictly_contains_scanline(
+        &self,
+        geometry: &Geometry,
+        scanline: isize,
+    ) -> bool {
         // Based on: https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L112
         let (min_y, max_y) = self.min_max_y(geometry);
-        (min_y < y) && (y < max_y)
+        (min_y < scanline) && (scanline < max_y)
     }
 
     #[inline]

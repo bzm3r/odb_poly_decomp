@@ -25,13 +25,13 @@ impl Debug for Node {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Node[{}]({:?}, ->inc({}), out({})->)",
+            "Node[{}](inc({})->{:?}->out({}))",
             self.id.index(),
-            self.point,
             match self.inc_edge {
                 Some(id) => format!("Some({})", id.index()),
                 None => "None".to_string(),
             },
+            self.point,
             match self.out_edge {
                 Some(id) => format!("Some({})", id.index()),
                 None => "None".to_string(),

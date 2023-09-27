@@ -121,9 +121,12 @@ impl Geometry {
             .into_iter()
             .map(|p| self.new_node(p, None, None))
             .collect::<Vec<NodeId>>();
-        info!("node_ids: {:?}", node_ids);
         info!(
-            "node_points: {:?}",
+            "node_ids: {:?}",
+            node_ids.iter().map(|id| id.index()).collect::<Vec<usize>>()
+        );
+        info!(
+            "nodes: {:?}",
             self.nodes
                 .iter()
                 .map(|(_id, node)| *node)
@@ -143,7 +146,11 @@ impl Geometry {
                 break;
             }
             if let Some(side) = source_node.which_side(&self[target]) {
-                info!("creating edge between: {:?} and  {:?}", source, target);
+                info!(
+                    "creating edge between: {:?} and  {:?}",
+                    source.index(),
+                    target.index()
+                );
                 self.new_edge(source, target, side);
             }
             (s, t) = (t, (t + 1) % n_nodes);
