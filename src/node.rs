@@ -1,39 +1,55 @@
-use std::{cell::Cell, cmp::Ordering};
+use std::cmp::Ordering;
 
-use crate::{edge::Edge, point::Point, geometry::Side};
+use id_arena::Id;
 
-#[derive(Clone, Debug, Default)]
-pub struct Node<'a> {
-    pub point: Point,
-    inc_edge: Cell<Option<&'a Edge<'a>>>,
-    out_edge: Cell<Option<&'a Edge<'a>>>,
+use crate::{
+    edge::EdgeId,
+    geometry::{GeometricId, Side},
+    point::Point,
+};
+
+pub type NodeId = Id<Node>;
+impl GeometricId for NodeId {
+    type Item = Node;
 }
 
-impl<'a> Node<'a> {
+#[derive(Clone, Copy, Debug)]
+pub struct Node {
+    pub id: NodeId,
+    pub point: Point,
+    inc_edge: Option<EdgeId>,
+    out_edge: Option<EdgeId>,
+}
+
+impl Node {
     pub fn new(
         point: Point,
-        inc_edge: Option<&'a Edge<'a>>,
-        out_edge: Option<&'a Edge<'a>>,
+        id: NodeId,
+        inc_edge: Option<EdgeId>,
+        out_edge: Option<EdgeId>,
     ) -> Self {
         Self {
+            id,
             point,
-            inc_edge: inc_edge.into(),
-            out_edge: out_edge.into(),
+            inc_edge,
+            out_edge,
         }
     }
 
     #[inline]
-    pub fn set_inc_edge(&'a self, inc: &Edge) {
-        self.inc_edge.replace(Some(inc));
+    pub fn set_inc_edge(&mut self, inc: EdgeId) {
+        debug_assert!(self.inc_edge.is_none());
+        self.inc_edge.replace(inc);
     }
 
     #[inline]
-    pub fn set_out_edge(&'a self, out: &Edge) {
-        self.out_edge.replace(Some(out));
+    pub fn set_out_edge(&mut self, out: EdgeId) {
+        debug_assert!(self.out_edge.is_none());
+        self.out_edge.replace(out);
     }
 
     #[inline]
-    pub fn which_side(&self, other: &'a Node) -> Option<Side> {
+    pub fn which_side(&self, other: &Node) -> Option<Side> {
         self.point.which_side(&other.point)
     }
 
@@ -48,52 +64,42 @@ impl<'a> Node<'a> {
     }
 
     #[inline]
-    pub fn in_edge(&self) -> Option<&Edge> {
-        self.inc_edge.get()
+    pub fn inc_edge(&self) -> Option<EdgeId> {
+        self.inc_edge
     }
 
     #[inline]
-    pub fn out_edge(&self) -> Option<&Edge> {
-        self.out_edge.get()
+    pub fn out_edge(&self) -> Option<EdgeId> {
+        self.out_edge
     }
 
     #[inline]
-    pub fn take_in_edge(&self) -> Option<&Edge> {
+    pub fn take_in_edge(&mut self) -> Option<EdgeId> {
         self.inc_edge.take()
     }
 
     #[inline]
-    pub fn take_out_edge(&self) -> Option<&Edge> {
+    pub fn take_out_edge(&mut self) -> Option<EdgeId> {
         self.out_edge.take()
     }
 }
 
-impl<'a> From<Point> for Node<'a> {
-    fn from(point: Point) -> Self {
-        Node {
-            point,
-            inc_edge: None.into(),
-            out_edge: None.into(),
-        }
-    }
-}
-
-impl<'a> PartialOrd for Node<'a> {
+impl PartialOrd for Node {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        self.point.partial_cmp(&other.point)
+        Some(self.cmp(other))
     }
 }
 
-impl<'a> PartialEq for Node<'a> {
+impl PartialEq for Node {
     fn eq(&self, other: &Self) -> bool {
         self.point.eq(&other.point)
     }
 }
 
-impl<'a> Ord for Node<'a> {
+impl Ord for Node {
     fn cmp(&self, other: &Self) -> Ordering {
         self.point.cmp(&other.point)
     }
 }
 
-impl<'a> Eq for Node<'a> {}
+impl Eq for Node {}

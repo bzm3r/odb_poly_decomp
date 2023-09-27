@@ -5,12 +5,12 @@ use crate::point::Point;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Rect {
-    left: Point,
-    right: Point,
+    _left: Point,
+    _right: Point,
 }
 
 impl Rect {
-    pub fn new(left: Point, right: Point) -> Self {
-        Self { left, right }
+    pub fn new(_left: Point, _right: Point) -> Self {
+        Self { _left, _right }
     }
 }

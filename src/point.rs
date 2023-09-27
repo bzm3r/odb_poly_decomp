@@ -30,6 +30,8 @@ impl PartialEq for Point {
     }
 }
 
+// We are purposefully overriding partial_cmp
+#[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
 impl PartialOrd for Point {
     // Based on:
     // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L71

@@ -1,8 +1,50 @@
-use crate::{decomposer::DecompErr, edge::Edge, node::Node, point::Point};
+use std::ops::{Index, IndexMut};
+
+use id_arena::{Arena, DefaultArenaBehavior};
+
+use crate::{
+    decomposer::DecompErr,
+    edge::{Edge, EdgeId},
+    node::{Node, NodeId},
+    point::Point,
+};
 
 pub struct Geometry {
-    nodes: Vec<Node>,
-    edges: Vec<Edge>,
+    nodes: Arena<Node>,
+    edges: Arena<Edge>,
+}
+
+impl Index<EdgeId> for Geometry {
+    type Output = Edge;
+    fn index(&self, id: EdgeId) -> &Self::Output {
+        self.edges.get(id).unwrap()
+    }
+}
+
+impl Index<NodeId> for Geometry {
+    type Output = Node;
+    fn index(&self, id: NodeId) -> &Self::Output {
+        self.nodes.get(id).unwrap()
+    }
+}
+
+impl IndexMut<EdgeId> for Geometry {
+    fn index_mut(&mut self, id: EdgeId) -> &mut Self::Output {
+        self.edges.get_mut(id).unwrap()
+    }
+}
+
+impl IndexMut<NodeId> for Geometry {
+    fn index_mut(&mut self, id: NodeId) -> &mut Self::Output {
+        self.nodes.get_mut(id).unwrap()
+    }
+}
+
+pub trait GeometricId
+where
+    Geometry: Index<Self, Output = Self::Item> + IndexMut<Self>,
+{
+    type Item;
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -12,10 +54,11 @@ pub enum Side {
 }
 
 impl Geometry {
+    #[inline]
     fn empty(capacity: usize) -> Self {
         Self {
-            nodes: Vec::with_capacity(capacity),
-            edges: Vec::with_capacity(capacity),
+            nodes: Arena::with_capacity(capacity),
+            edges: Arena::with_capacity(capacity),
         }
     }
 
@@ -23,36 +66,26 @@ impl Geometry {
     pub fn new_node(
         &mut self,
         point: Point,
-        in_edge: Option<&Edge>,
-        out_edge: Option<&Edge>,
-    ) -> &Node {
-        self.nodes.push(Node::new(point, in_edge, out_edge));
-        let node = self.nodes.last().unwrap();
-        node
+        in_edge: Option<EdgeId>,
+        out_edge: Option<EdgeId>,
+    ) -> NodeId {
+        self.nodes
+            .alloc_with_id(|id| Node::new(point, id, in_edge, out_edge))
     }
 
+    #[inline]
     pub fn new_edge(
         &mut self,
-        source: &Node,
-        target: &Node,
+        source: NodeId,
+        target: NodeId,
         side: Side,
-    ) -> &Edge {
-        let edge = Edge::new(source, target, side);
-        self.edges.push(edge);
-        let edge = self.edges.last().unwrap();
-        source.set_out_edge(edge);
-        target.set_inc_edge(edge);
-        edge
-    }
-
-    #[inline]
-    pub fn get_node(&self, ix: usize) -> &Node {
-        &self.nodes[ix]
-    }
-
-    #[inline]
-    pub fn get_edge(&self, ix: usize) -> &Edge {
-        &self.edges[ix]
+    ) -> Edge {
+        let new_edge_id = self
+            .edges
+            .alloc_with_id(|id| Edge::new(id, source, target, side));
+        self[source].set_out_edge(new_edge_id);
+        self[target].set_inc_edge(new_edge_id);
+        self[new_edge_id]
     }
 
     #[inline]
@@ -60,41 +93,41 @@ impl Geometry {
         self.nodes.len()
     }
 
-    /// For use when Geometry is being initialized.
-    fn initialize_nodes(&mut self, points: Vec<Point>) {
+    /// For use when Geometry is being intialized.
+    fn initialize_nodes_and_edges(&mut self, points: Vec<Point>) {
+        let n_nodes = points.len();
+        debug_assert!(n_nodes > 3);
         // Based on:
         // 1) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L179
-        // 2) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L186
-        // note carefully: `true` is passed for active in call to new node
-        points.into_iter().for_each(|p| {
-            self.new_node(p, None, None, true);
-        });
-    }
+        let node_ids = points
+            .into_iter()
+            .map(|p| self.new_node(p, None, None))
+            .collect::<Vec<NodeId>>();
 
-    pub fn iter_nodes(&self) -> std::slice::Iter<'_, Node<'_>> {
-        self.nodes.iter()
-    }
-
-    /// For use when Geometry is being intialized.
-    fn initialize_edges(&mut self) {
         // Based on:
         // 1) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L189
         // 2) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L192
         // 3) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L198
         // 4) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L201
-        let n_nodes = self.len_nodes();
-        debug_assert!(self.len_nodes() > 3);
-        let (s, t) = (0, 1);
+        let (mut s, mut t) = (0_usize, 1_usize);
         loop {
-            let (source, target) = (&self.get_node(s), &self.get_node(t));
-            if let Some(side) = source.which_side(target) {
-                self.new_edge(&source, &target, side);
+            let (source, target) = (node_ids[s], node_ids[t]);
+            if let Some(side) = self[source].which_side(&self[target]) {
+                self.new_edge(source, target, side);
             }
-            let (s, t) = (t, (t + 1) % n_nodes);
+            (s, t) = (t, (t + 1) % n_nodes);
         }
     }
 
-    pub fn iter_edges(&self) -> std::slice::Iter<'_, Node<'_>> {
+    pub fn iter_edges(
+        &self,
+    ) -> id_arena::Iter<'_, Edge, DefaultArenaBehavior<Edge>> {
+        self.edges.iter()
+    }
+
+    pub fn iter_nodes(
+        &self,
+    ) -> id_arena::Iter<'_, Node, DefaultArenaBehavior<Node>> {
         self.nodes.iter()
     }
 
@@ -109,8 +142,7 @@ impl Geometry {
     pub fn new(points: Vec<Point>) -> Result<Self, DecompErr> {
         if points.len() > 3 {
             let mut geometry = Self::empty(points.len());
-            geometry.initialize_nodes(points);
-            geometry.initialize_edges();
+            geometry.initialize_nodes_and_edges(points);
             Ok(geometry)
         } else {
             Err(DecompErr::NotEnoughPoints)

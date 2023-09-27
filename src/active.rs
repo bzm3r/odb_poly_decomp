@@ -1,15 +1,30 @@
-use std::fmt::Debug;
+use std::{
+    fmt::Debug,
+    ops::{Index, IndexMut},
+};
 
-use crate::{edge::Edge, node::Node};
+use id_arena::Id;
 
-pub trait ActiveVec<'a>: Clone + Debug + Default {
-    type Item;
+use crate::{
+    edge::{Edge, EdgeId},
+    geometry::{GeometricId, Geometry},
+    node::{Node, NodeId},
+};
+
+#[allow(clippy::len_without_is_empty)]
+pub trait ActiveVec
+where
+    Self: Clone + Debug + Default,
+    Geometry: Index<Self::Id, Output = Self::Item> + IndexMut<Self::Id>,
+{
+    type Item: Clone + Copy;
+    type Id: GeometricId<Item = Self::Item> + Clone + Copy;
 
     fn cursor(&self) -> usize;
 
-    fn items(&self) -> &Vec<&Self::Item>;
+    fn items(&self) -> &Vec<Self::Id>;
 
-    fn set_cursor(&mut self, new: usize);
+    fn set_cursor(&mut self, new: Cursor);
 
     #[inline]
     fn increment(&mut self) {
@@ -17,44 +32,44 @@ pub trait ActiveVec<'a>: Clone + Debug + Default {
     }
 
     #[inline]
-    fn peek_at(&self, ix: usize) -> Option<&Self::Item> {
+    fn peek_at(&self, ix: usize) -> Option<Self::Id> {
         self.items().get(ix).copied()
     }
 
     #[inline]
-    fn peek(&self) -> Option<&Self::Item> {
+    fn peek(&self) -> Option<Self::Id> {
         self.peek_at(self.cursor())
     }
 
     /// If the next item exists, return it, and increment the cursor.
     #[inline]
-    fn next(&mut self) -> Option<&Self::Item> {
-        let item = self.peek();
-        if item.is_some() {
+    fn next(&mut self, geometry: &Geometry) -> Option<Self::Item> {
+        if let Some(id) = self.peek() {
             self.increment();
+            Some(geometry[id])
+        } else {
+            None
         }
-        item
     }
 
     /// Check if the next item exists, and then if it
     /// additionally passes the predicate supplied by the user.
     #[inline]
-    fn next_if<F: FnOnce(&Self::Item) -> bool>(
+    fn next_if<F: FnOnce(&Geometry, Self::Id) -> Option<Self::Item>>(
         &mut self,
+        geometry: &Geometry,
         f: F,
-    ) -> Option<&Self::Item> {
+    ) -> Option<Self::Item> {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L229-232
-        if let Some(item) = self.peek() {
-            if f(item) {
-                self.increment();
-                return Some(item);
-            }
+        let result = self.peek().and_then(|id| f(geometry, id));
+        if result.is_some() {
+            self.increment();
         }
-        None
+        result
     }
 
-    fn insert(&mut self, item: &Self::Item);
+    fn insert(&mut self, geometry: &Geometry, item: Self::Id);
 
     /// Reset the cursor back to the start.
     fn reset(&mut self) {
@@ -67,31 +82,31 @@ pub trait ActiveVec<'a>: Clone + Debug + Default {
     fn with_capacity(capacity: usize) -> Self;
 
     #[inline]
-    fn len(&'a self) -> usize {
+    fn len(&self) -> usize {
         self.items().len()
     }
 
     #[inline]
-    fn finished(&'a self) -> bool {
+    fn finished(&self) -> bool {
         self.len() == self.cursor()
     }
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ActiveNodes<'a> {
-    nodes: Vec<&'a Node<'a>>,
-    cursor: usize,
+pub struct ActiveNodes {
+    nodes: Vec<Id<Node>>,
+    cursor: Cursor,
 }
 
-impl<'a> ActiveNodes<'a> {
+impl ActiveNodes {
     pub fn sort(&mut self) {
         self.nodes.sort()
     }
 
-    pub fn scanline(&self) -> Option<isize> {
+    pub fn scanline(&self, geometry: &Geometry) -> Option<isize> {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L205
-        self.peek().and_then(|node| node.y().into())
+        self.peek().and_then(|id| geometry[id].y().into())
     }
 
     pub fn finished(&self) -> bool {
@@ -99,22 +114,23 @@ impl<'a> ActiveNodes<'a> {
     }
 }
 
-impl<'a> ActiveVec<'a> for ActiveNodes<'a> {
-    type Item = Node<'a>;
+impl ActiveVec for ActiveNodes {
+    type Id = NodeId;
+    type Item = Node;
 
     fn cursor(&self) -> usize {
         self.cursor
     }
 
-    fn items(&self) -> &Vec<&Self::Item> {
+    fn items(&self) -> &Vec<Self::Id> {
         &self.nodes
     }
 
-    fn set_cursor(&mut self, new: usize) {
+    fn set_cursor(&mut self, new: Cursor) {
         self.cursor = new;
     }
 
-    fn insert(&mut self, item: &Self::Item) {
+    fn insert(&mut self, _: &Geometry, item: Self::Id) {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/master/src/odb/src/zutil/poly_decomp.cpp#L186
         self.nodes.push(item);
@@ -129,56 +145,66 @@ impl<'a> ActiveVec<'a> for ActiveNodes<'a> {
 }
 
 #[derive(Clone, Debug, Default)]
-pub struct ActiveEdges<'a> {
-    pub edges: Vec<&'a Edge<'a>>,
-    cursor: usize,
+pub struct ActiveEdges {
+    pub edges: Vec<EdgeId>,
+    cursor: Cursor,
 }
 
-impl<'a> ActiveEdges<'a> {
-    fn maybe_insert(&mut self, edge: Option<&'a Edge<'a>>) {
-        if let Some(edge) = edge {
-            self.insert(edge);
+impl ActiveEdges {
+    fn maybe_insert(&mut self, geometry: &Geometry, edge_id: Option<EdgeId>) {
+        if let Some(id) = edge_id {
+            self.insert(geometry, id);
         }
     }
 
-    pub fn insert_edges_of(&mut self, node: &Node) {
-        self.maybe_insert(node.in_edge());
-        self.maybe_insert(node.out_edge());
+    /// Insert the incoming and outgoing edges of a node, if they exist, into
+    /// the active edge vec.
+    pub fn insert_edges(
+        &mut self,
+        geometry: &Geometry,
+        inc: Option<EdgeId>,
+        out: Option<EdgeId>,
+    ) {
+        self.maybe_insert(geometry, inc);
+        self.maybe_insert(geometry, out);
     }
 
     /// Retain those elements which pass `f`, otherwise delete the rest.
-    pub fn retain_if<F: FnMut(&&'a Edge<'a>) -> bool>(&mut self, f: F) {
+    pub fn retain_if<F: FnMut(&EdgeId) -> bool>(&mut self, f: F) {
         self.edges.retain(f);
     }
 }
 
-impl<'a> ActiveVec<'a> for ActiveEdges<'a> {
-    type Item = Edge<'a>;
+pub type Cursor = usize;
+
+impl ActiveVec for ActiveEdges {
+    type Id = EdgeId;
+    type Item = Edge;
 
     fn cursor(&self) -> usize {
         self.cursor
     }
 
-    fn items(&self) -> &Vec<&Self::Item> {
+    fn items(&self) -> &Vec<Self::Id> {
         &self.edges
     }
 
-    fn set_cursor(&mut self, new: usize) {
+    fn set_cursor(&mut self, new: Cursor) {
         self.cursor = new;
     }
 
     // Based on: https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L242
-    fn insert(&mut self, item: &Self::Item) {
-        let x = item.src_x();
+    fn insert(&mut self, geometry: &Geometry, id: Self::Id) {
+        let x = geometry[id].src_x(geometry);
 
-        while let Some(edge) = self.next() {
-            if x < edge.src_x() {
-                self.edges.insert(self.cursor(), item);
+        while let Some(_edge) = self.next(geometry) {
+            if x < geometry[id].src_x(geometry) {
+                self.edges.insert(self.cursor(), id);
                 return;
             }
         }
 
-        self.edges.push(item);
+        self.edges.push(id);
     }
 
     fn with_capacity(capacity: usize) -> Self {
@@ -189,8 +215,8 @@ impl<'a> ActiveVec<'a> for ActiveEdges<'a> {
     }
 }
 
-impl<'a> FromIterator<&'a Node<'a>> for ActiveNodes<'a> {
-    fn from_iter<Iterable: IntoIterator<Item = &'a Node<'a>>>(
+impl FromIterator<NodeId> for ActiveNodes {
+    fn from_iter<Iterable: IntoIterator<Item = NodeId>>(
         nodes: Iterable,
     ) -> Self {
         Self {
@@ -200,8 +226,8 @@ impl<'a> FromIterator<&'a Node<'a>> for ActiveNodes<'a> {
     }
 }
 
-impl<'a> FromIterator<&'a Edge<'a>> for ActiveEdges<'a> {
-    fn from_iter<Iterable: IntoIterator<Item = &'a Edge<'a>>>(
+impl FromIterator<EdgeId> for ActiveEdges {
+    fn from_iter<Iterable: IntoIterator<Item = EdgeId>>(
         edges: Iterable,
     ) -> Self {
         Self {
