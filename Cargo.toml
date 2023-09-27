@@ -13,3 +13,5 @@ path = "src/main.rs"
 
 [dependencies]
 id-arena = "2.2.1"
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.17", features = ["fmt", "parking_lot"] }

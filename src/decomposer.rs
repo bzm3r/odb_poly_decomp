@@ -1,5 +1,7 @@
 use std::{error::Error, fmt::Display};
 
+use tracing::info;
+
 use crate::active::{ActiveEdges, ActiveNodes, ActiveVec, Cursor};
 use crate::edge::{Edge, EdgeId};
 use crate::geometry::{Geometry, Side};
@@ -31,20 +33,37 @@ impl Decomposer {
     fn new(geometry: &Geometry) -> Result<Self, DecompErr> {
         let mut active_nodes: ActiveNodes =
             geometry.iter_nodes().map(|(id, _)| id).collect();
-        let active_edges: ActiveEdges =
-            geometry.iter_edges().map(|(id, _)| id).collect();
-        let scanline = active_nodes
-            .scanline(geometry)
-            .ok_or(DecompErr::FailedScanlineUpdate)?;
+        info!("active_nodes: {:?}", &active_nodes);
+
+        let active_edges = ActiveEdges::with_capacity(2 * active_nodes.len());
+
+        // We do not need to do scanline update here, as we do it as part of the
+        // loop decomposition loop. (CTRL+F for "DECOMP_SCANLINE_UPDATE" below)
+        // let scanline = active_nodes
+        //     .scanline(geometry)
+        //     .ok_or(DecompErr::FailedScanlineUpdate)?;
+
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#203
-        active_nodes.sort();
+        // Follow the sort -> cmp chain all the way to the definition of
+        // PartialCmp for Point (in point.rs), or search all files for:
+        // POINT_PARTIAL_CMP
+        active_nodes.sort(geometry);
+        info!(
+            "sorted active nodes: {:?}",
+            active_nodes
+                .items()
+                .iter()
+                .map(|&node| geometry[node].point)
+                .collect::<Vec<Point>>()
+        );
+
         Ok(Self {
             active_nodes,
             active_edges,
             // Based on:
             // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#205
-            scanline,
+            scanline: 0,
         })
     }
 
@@ -53,6 +72,11 @@ impl Decomposer {
     // during the scan_edges phase.
     // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L222
     fn add_active_edges(&mut self, geometry: &Geometry) {
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L258-320
+        // See also the comment by CTRL+F for PURGE_ACTIVE_EDGES
+        self.active_edges.reset_cursor();
+        info!("active_edges_cursor: {:?}", self.active_edges.cursor());
         // Based on: 1) iterate on active_nodes, based on wherever it is
         // currently and 2) if the current node's y-marker != scanline, then
         // we should stop, as we have finished with the set of edges relevant
@@ -109,9 +133,8 @@ impl Decomposer {
     ) -> Vec<Rect> {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L258-320
-
-        // See comment in `purge_active_edges`
-        self.active_edges.reset();
+        // See also the comment by CTRL+F for PURGE_ACTIVE_EDGES
+        self.active_edges.reset_cursor();
 
         let mut left_cursor;
         let mut right_cursor;
@@ -225,6 +248,8 @@ impl Decomposer {
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L322-333
         self.active_edges
             .retain_if(|&id| geometry[id].contains_y(geometry, self.scanline));
+        info!("post-purge cursor: {}", self.active_edges.cursor());
+        // PURGE_ACTIVE_EDGES
         // Now that we have purged this edge iterator, its cursor is invalid.
         // The original code is set up so that `add_edges` is called next
         // if the scan/decompose loop still runs. The first thing `add_edges`
@@ -266,21 +291,27 @@ impl Decomposer {
         // Worth pre-allocating? Not sure.
         let mut rects = Vec::with_capacity(geometry.len_nodes());
         loop {
+            // Based on (see also, by CTRL+F for "SCANLINE_COMMENT" below):
+            // DECOMP_SCANLINE_UPDATE https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L215
+            decomposer.update_scanline(&geometry);
+            info!("updated scanline: {:?}", decomposer.scanline);
             // Based on:
             // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L208
             decomposer.add_active_edges(&geometry);
+            info!("active_edges: {:?}", &decomposer.active_edges);
 
             rects = decomposer.scan_edges(&mut geometry, rects);
 
             if decomposer.active_nodes.finished() {
                 break;
             } else {
-                // TODO: do we need something that does what line 214 does:
+                // TODO: do we need something that does what line 214 does?:
                 // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L214
+                // Answer: I don't think so, because it's manually advancing the
+                // iterator pointer, which we do not need to do? However, we
+                // should make sure that updating of the scanline happens first
+                // in the loop (SCANLINE_COMMENT)
 
-                // Based on:
-                // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L215
-                decomposer.update_scanline(&geometry);
                 // Based on:
                 // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L216
                 decomposer.purge_active_edges(&geometry);

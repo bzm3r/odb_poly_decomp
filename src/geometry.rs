@@ -1,6 +1,11 @@
-use std::ops::{Index, IndexMut};
+use std::{
+    fmt::Debug,
+    ops::{Index, IndexMut},
+};
 
 use id_arena::{Arena, DefaultArenaBehavior};
+
+use tracing::info;
 
 use crate::{
     decomposer::DecompErr,
@@ -47,10 +52,23 @@ where
     type Item;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Side {
     Left,
     Right,
+}
+
+impl Debug for Side {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{}",
+            match self {
+                Side::Left => "LEFT",
+                Side::Right => "RIGHT",
+            }
+        )
+    }
 }
 
 impl Geometry {
@@ -103,6 +121,14 @@ impl Geometry {
             .into_iter()
             .map(|p| self.new_node(p, None, None))
             .collect::<Vec<NodeId>>();
+        info!("node_ids: {:?}", node_ids);
+        info!(
+            "node_points: {:?}",
+            self.nodes
+                .iter()
+                .map(|(_id, node)| *node)
+                .collect::<Vec<Node>>()
+        );
 
         // Based on:
         // 1) https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L189
@@ -112,11 +138,23 @@ impl Geometry {
         let (mut s, mut t) = (0_usize, 1_usize);
         loop {
             let (source, target) = (node_ids[s], node_ids[t]);
-            if let Some(side) = self[source].which_side(&self[target]) {
+            let source_node = self[source];
+            if source_node.out_edge().is_some() {
+                break;
+            }
+            if let Some(side) = source_node.which_side(&self[target]) {
+                info!("creating edge between: {:?} and  {:?}", source, target);
                 self.new_edge(source, target, side);
             }
             (s, t) = (t, (t + 1) % n_nodes);
         }
+        info!(
+            "edges: {:?}",
+            self.edges
+                .iter()
+                .map(|(_id, edge)| *edge)
+                .collect::<Vec<Edge>>()
+        );
     }
 
     pub fn iter_edges(

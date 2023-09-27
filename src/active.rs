@@ -72,7 +72,7 @@ where
     fn insert(&mut self, geometry: &Geometry, item: Self::Id);
 
     /// Reset the cursor back to the start.
-    fn reset(&mut self) {
+    fn reset_cursor(&mut self) {
         //Based on: the various places where .begin is seen in the
         //
         // https://github.com/search?q=repo%3Abzm3r%2FOpenROAD+path%3Apoly_decomp.cpp+begin&type=code
@@ -92,15 +92,28 @@ where
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct ActiveNodes {
     nodes: Vec<Id<Node>>,
     cursor: Cursor,
 }
 
+impl Debug for ActiveNodes {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}]",
+            self.nodes
+                .iter()
+                .map(|id| id.index().to_string())
+                .fold(String::new(), |a, b| format!("{}, {}", a, b))
+        )
+    }
+}
+
 impl ActiveNodes {
-    pub fn sort(&mut self) {
-        self.nodes.sort()
+    pub fn sort(&mut self, geometry: &Geometry) {
+        self.nodes.sort_by(|&a, &b| geometry[a].cmp(&geometry[b]));
     }
 
     pub fn scanline(&self, geometry: &Geometry) -> Option<isize> {
@@ -144,10 +157,23 @@ impl ActiveVec for ActiveNodes {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct ActiveEdges {
     pub edges: Vec<EdgeId>,
     cursor: Cursor,
+}
+
+impl Debug for ActiveEdges {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "[{}]",
+            self.edges
+                .iter()
+                .map(|id| id.index().to_string())
+                .fold(String::new(), |a, b| format!("{}, {}", a, b))
+        )
+    }
 }
 
 impl ActiveEdges {

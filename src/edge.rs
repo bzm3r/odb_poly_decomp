@@ -1,3 +1,5 @@
+use std::fmt::Debug;
+
 use id_arena::Id;
 
 use crate::{
@@ -11,12 +13,25 @@ impl GeometricId for EdgeId {
 }
 
 /// An edge from source to target.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy)]
 pub struct Edge {
     pub id: EdgeId,
     pub source: NodeId,
     pub target: NodeId,
     pub side: Side,
+}
+
+impl Debug for Edge {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Edge[{}](src({})->tgt({}), {:?})",
+            self.id.index(),
+            self.source.index(),
+            self.target.index(),
+            self.side
+        )
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
