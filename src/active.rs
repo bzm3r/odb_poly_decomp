@@ -1,9 +1,12 @@
 use std::{
     fmt::Debug,
+    hash::Hash,
     ops::{Index, IndexMut},
 };
 
 use id_arena::Id;
+
+use tracing::info;
 
 use crate::{
     edge::{Edge, EdgeId},
@@ -14,11 +17,16 @@ use crate::{
 #[allow(clippy::len_without_is_empty)]
 pub trait ActiveVec
 where
-    Self: Clone + Debug + Default,
+    Self: Clone + Default,
     Geometry: Index<Self::Id, Output = Self::Item> + IndexMut<Self::Id>,
 {
-    type Item: Clone + Copy;
-    type Id: GeometricId<Item = Self::Item> + Clone + Copy;
+    type Item: Clone + Copy + Debug;
+    type Id: GeometricId<Item = Self::Item>
+        + Clone
+        + Copy
+        + Hash
+        + PartialEq
+        + Eq;
 
     fn cursor(&self) -> usize;
 
@@ -103,24 +111,6 @@ pub struct ActiveNodes {
     cursor: Cursor,
 }
 
-impl Debug for ActiveNodes {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{}]",
-            self.nodes
-                .iter()
-                .enumerate()
-                .map(|(ix, id)| if ix > 0 {
-                    format!(", {}", id.index())
-                } else {
-                    format!("{}", id.index())
-                })
-                .fold(String::new(), |a, b| format!("{}{}", a, b))
-        )
-    }
-}
-
 impl ActiveNodes {
     pub fn sort(&mut self, geometry: &Geometry) {
         self.nodes.sort_by(|&a, &b| geometry[a].cmp(&geometry[b]));
@@ -165,30 +155,31 @@ impl ActiveVec for ActiveNodes {
             cursor: 0,
         }
     }
+
+    // fn debug<'a>(&self, ) -> String {
+    //     self.active_nodes
+    //         .items()
+    //         .iter()
+    //         .enumerate()
+    //         .map(|(ix, &id)| {
+    //             format!(
+    //                 "{:?}",
+    //                 DebugItem {
+    //                     style: (ix == self.active_nodes.cursor())
+    //                         .then_some(STYLE_CURSOR)
+    //                         .unwrap_or(MiniStyle::default()),
+    //                     data: self.geometry[id],
+    //                 }
+    //             )
+    //         })
+    //         .join(", ")
+    // }
 }
 
 #[derive(Clone, Default)]
 pub struct ActiveEdges {
     pub edges: Vec<EdgeId>,
     cursor: Cursor,
-}
-
-impl Debug for ActiveEdges {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "[{}]",
-            self.edges
-                .iter()
-                .enumerate()
-                .map(|(ix, id)| if ix > 0 {
-                    format!(", {}", id.index())
-                } else {
-                    format!("{}", id.index())
-                })
-                .fold(String::new(), |a, b| format!("{}{}", a, b))
-        )
-    }
 }
 
 impl ActiveEdges {
@@ -220,8 +211,8 @@ impl ActiveEdges {
 pub type Cursor = usize;
 
 impl ActiveVec for ActiveEdges {
-    type Id = EdgeId;
     type Item = Edge;
+    type Id = EdgeId;
 
     fn cursor(&self) -> usize {
         self.cursor
@@ -254,6 +245,7 @@ impl ActiveVec for ActiveEdges {
                 // increments, while we want the cursor position where the
                 // returned item was at.
                 self.edges.insert(self.cursor() - 1, id);
+                info!("adding edge to active list: {}", id.index());
                 return;
             }
         }

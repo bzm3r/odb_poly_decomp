@@ -50,6 +50,7 @@ where
     Geometry: Index<Self, Output = Self::Item> + IndexMut<Self>,
 {
     type Item;
+    fn index(&self) -> usize;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -147,9 +148,11 @@ impl Geometry {
             }
             if let Some(side) = source_node.which_side(&self[target]) {
                 info!(
-                    "creating edge between: {:?} and  {:?}",
+                    "new edge: src[{}]{:?} -> tgt[{}]{:?}",
                     source.index(),
-                    target.index()
+                    self[source].point,
+                    target.index(),
+                    self[target].point,
                 );
                 self.new_edge(source, target, side);
             }

@@ -10,7 +10,10 @@ pub struct Rect {
 }
 
 impl Rect {
-    pub fn new(_left: Point, _right: Point) -> Self {
-        Self { _left, _right }
+    pub fn new(left: Point, right: Point) -> Self {
+        Self {
+            _left: left,
+            _right: right,
+        }
     }
 }

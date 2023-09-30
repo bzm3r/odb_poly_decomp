@@ -5,6 +5,7 @@ pub fn main() {
         .pretty()
         // enable everything
         .with_max_level(tracing::Level::TRACE)
+        .with_ansi(true)
         // sets this to be the default, global collector for this application.
         .init();
 

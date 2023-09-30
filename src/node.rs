@@ -11,6 +11,10 @@ use crate::{
 pub type NodeId = Id<Node>;
 impl GeometricId for NodeId {
     type Item = Node;
+    #[inline]
+    fn index(&self) -> usize {
+        self.index()
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -56,6 +60,11 @@ impl Node {
     }
 
     #[inline]
+    pub fn id(self) -> NodeId {
+        self.id
+    }
+
+    #[inline]
     pub fn set_inc_edge(&mut self, inc: EdgeId) {
         debug_assert!(self.inc_edge.is_none());
         self.inc_edge.replace(inc);
@@ -93,7 +102,7 @@ impl Node {
     }
 
     #[inline]
-    pub fn take_in_edge(&mut self) -> Option<EdgeId> {
+    pub fn take_inc_edge(&mut self) -> Option<EdgeId> {
         self.inc_edge.take()
     }
 

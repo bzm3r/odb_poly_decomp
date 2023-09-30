@@ -1,12 +1,26 @@
+use core::fmt;
 use std::{error::Error, fmt::Display};
 
+use nu_ansi_term::Style;
 use tracing::info;
 
-use crate::active::{ActiveEdges, ActiveNodes, ActiveVec, Cursor};
-use crate::edge::{Edge, EdgeId};
-use crate::geometry::{Geometry, Side};
-use crate::point::Point;
-use crate::rect::Rect;
+use crate::{
+    active::Cursor,
+    geometry::{Geometry, Side},
+};
+use crate::{
+    active::{ActiveEdges, ActiveNodes, ActiveVec},
+    loop_span,
+};
+use crate::{
+    edge::{Edge, EdgeId},
+    emit_info,
+};
+use crate::{misc::debug_with, rect::Rect};
+use crate::{
+    misc::{MiniStyle, COLOR_ORANGE, LEFT_EDGE, RIGHT_EDGE},
+    point::Point,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DecompErr {
@@ -22,18 +36,101 @@ impl Display for DecompErr {
 
 impl Error for DecompErr {}
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Default)]
 pub struct Decomposer {
     active_nodes: ActiveNodes,
     active_edges: ActiveEdges,
     scanline: isize,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct EdgeScanResult {
+    pub cursor: Cursor,
+    pub edge: Edge,
+    pub side: Side,
+}
+
+impl EdgeScanResult {
+    pub fn new(cursor: Cursor, edge: Edge, side: Side) -> Self {
+        Self { cursor, edge, side }
+    }
+
+    #[inline]
+    pub fn scanline_strictly_inside(
+        &self,
+        geometry: &Geometry,
+        scanline: isize,
+    ) -> bool {
+        self.edge.scanline_strictly_inside(geometry, scanline)
+    }
+
+    pub fn matches_id(&self, id: &EdgeId) -> bool {
+        &self.edge.id == id
+    }
+
+    pub fn matches_cursor(&self, cursor: Cursor) -> bool {
+        self.cursor == cursor
+    }
+}
+
+pub fn debug_active_nodes(
+    f: &mut fmt::Formatter,
+    geometry: &Geometry,
+    active_nodes: &ActiveNodes,
+) -> fmt::Result {
+    write!(f, "[ ")?;
+    for (ix, &id) in active_nodes.items().iter().enumerate() {
+        let sep = if ix != 0 { ", " } else { "" };
+        let node = geometry[id];
+
+        write!(f, "{sep}{node:?}")?;
+    }
+    write!(f, " ]")
+}
+
+pub fn debug_active_edges(
+    f: &mut fmt::Formatter,
+    geometry: &Geometry,
+    active_edges: &ActiveEdges,
+    left: Option<EdgeScanResult>,
+    right: Option<EdgeScanResult>,
+) -> fmt::Result {
+    write!(f, "[ ")?;
+    for (ix, &id) in active_edges.items().iter().enumerate() {
+        let sep = if ix != 0 { ", " } else { "" };
+        let edge = geometry[id];
+        let mini = if left.is_some_and(|s| s.matches_id(&id)) {
+            LEFT_EDGE
+        } else if right.is_some_and(|s| s.matches_id(&id)) {
+            RIGHT_EDGE
+        } else {
+            MiniStyle::default()
+        };
+        let tag = if left.is_some_and(|s| s.matches_cursor(ix)) {
+            "L:"
+        } else if right.is_some_and(|s| s.matches_cursor(ix)) {
+            "R:"
+        } else {
+            ""
+        };
+
+        write!(
+            f,
+            "{sep}{:?}",
+            Style::from(mini).paint(format!("{tag}{edge:?}"))
+        )?;
+    }
+    write!(f, " ]")
+}
+
 impl Decomposer {
     fn new(geometry: &Geometry) -> Result<Self, DecompErr> {
         let mut active_nodes: ActiveNodes =
             geometry.iter_nodes().map(|(id, _)| id).collect();
-        info!("active_nodes: {:?}", &active_nodes);
+        info!(
+            "(pre-sorting) active_nodes: {:?}",
+            debug_with(|f| debug_active_nodes(f, geometry, &active_nodes))
+        );
 
         let active_edges = ActiveEdges::with_capacity(2 * active_nodes.len());
 
@@ -50,12 +147,8 @@ impl Decomposer {
         // POINT_PARTIAL_CMP
         active_nodes.sort(geometry);
         info!(
-            "sorted active nodes: {:?}",
-            active_nodes
-                .items()
-                .iter()
-                .map(|&node| geometry[node].point)
-                .collect::<Vec<Point>>()
+            "(post-sorting) active_nodes: {:?}",
+            debug_with(|f| debug_active_nodes(f, geometry, &active_nodes))
         );
 
         Ok(Self {
@@ -117,18 +210,27 @@ impl Decomposer {
         &mut self,
         geometry: &Geometry,
         side: Side,
-    ) -> Option<(Edge, Cursor)> {
+    ) -> Option<EdgeScanResult> {
         // Based on the general shape of:
-        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L268-L277
-
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L268-L276
         // If active_edges.next() returns None (i.e. active_edges' cursor has
         // reached the end), then this function will return `None`, upon which
         // scan edges will also return.
+
+        let fetch_y = match side {
+            Side::Left => Edge::src_y,
+            Side::Right => Edge::tgt_y,
+        };
+
         while let Some(edge) = self.active_edges.next(geometry) {
             // Based on:
             // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L273-L276
-            if edge.side == side && edge.src_y(geometry) != self.scanline {
-                return Some((edge, self.active_edges.cursor()));
+            if edge.side == side && fetch_y(&edge, geometry) != self.scanline {
+                return Some(EdgeScanResult::new(
+                    self.active_edges.cursor(),
+                    edge,
+                    side,
+                ));
             }
         }
         None
@@ -144,58 +246,141 @@ impl Decomposer {
         // See also the comment by CTRL+F for PURGE_ACTIVE_EDGES
         self.active_edges.reset_cursor();
 
-        let mut left_cursor;
-        let mut right_cursor;
-        let mut left;
-        let mut right;
+        let mut opt_left;
+        let mut opt_right = None;
 
         while !self.active_edges.finished() {
+            let _ = loop_span!(
+                sty:COLOR_ORANGE, id:"scan_edges: while !self.active_edges.finished()"
+            );
+
+            opt_left = None;
+            emit_info!(
+                fmt:"initial state: {:?}\n" |
+                debug_with(|f| self.debug(f, geometry, opt_left, opt_right))
+            );
+
             // Based on:
             // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L265-L277
-            (left, left_cursor) = if let Some((e, c)) =
-                self.scan_for_edge_on_side(geometry, Side::Left)
-            {
-                (e, c)
+            opt_left = self.scan_for_edge_on_side(geometry, Side::Left);
+            let mut left = if let Some(left) = opt_left {
+                left
             } else {
                 // TODO: should we be panicking here?
+                emit_info!(sty:COLOR_ORANGE, msg:"no left edge found. finishing.");
                 return rects;
             };
+
+            emit_info!(
+                fmt:"after scanning for left edge: {:?}\n" |
+                debug_with(|f| self.debug(f, geometry, opt_left, opt_right))
+            );
 
             // Based on:
             // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L279-L290
-            (right, right_cursor) = if let Some((e, c)) =
-                self.scan_for_edge_on_side(geometry, Side::Right)
-            {
-                (e, c)
+            // NOTE: we do not have to do:
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L281
+            // --- because our "iterator" increments itself each time we call
+            // next.
+            opt_right = self.scan_for_edge_on_side(geometry, Side::Right);
+            let mut right = if let Some(right) = opt_right {
+                right
             } else {
                 // TODO: should we be panicking here?
+                emit_info!(sty:COLOR_ORANGE, msg:"no right edge found. finishing.");
                 return rects;
             };
 
-            if left.strictly_contains_scanline(geometry, self.scanline)
-                && right.strictly_contains_scanline(geometry, self.scanline)
+            emit_info!(
+                fmt:"after scanning for right edge: {:?}\n" |
+                debug_with(|f| self.debug(f, geometry, opt_left, opt_right))
+            );
+
+            // Based on:
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L293
+            if left.scanline_strictly_inside(geometry, self.scanline)
+                && right.scanline_strictly_inside(geometry, self.scanline)
             {
-                // https://stackoverflow.com/a/1813008/3486684 sigh, C++
-                left_cursor += 1;
-                if left_cursor == right_cursor {
+                // Current interpretation of (++itr) == right.cursor is that
+                // itr is incremented first, and then the comparison takes
+                // place. https://stackoverflow.com/a/1813008/3486684
+                left.cursor += 1;
+                if left.cursor == right.cursor {
                     continue;
+                } else {
+                    if let Some(id) = self.active_edges.peek_at(left.cursor) {
+                        left.edge = geometry[id];
+                    } else {
+                        // TODO: maybe we want to return with rects here?
+                        continue;
+                    }
+                    // Need to update left if we have reached here
+                    opt_left.replace(left);
                 }
             }
+            emit_info!(
+                fmt:"after confirming check if both left and right strictly contain scanline: {:?}\n" |
+                debug_with(|f| self.debug(f, geometry, opt_left, opt_right))
+            );
 
-            if left.strictly_contains_scanline(geometry, self.scanline) {
-                // The existing edge is not deleted, so its sufficient to do
-                // an overwrite of the variable that used to contain it?
-                left = self.split_edge(geometry, left.id, Side::Left);
-            }
+            left.edge = if left
+                .scanline_strictly_inside(geometry, self.scanline)
+            {
+                // Based on:
+                // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L299-L303
+                let new_edge =
+                    self.split_edge(geometry, left.edge.id, Side::Left);
+                // Based on:
+                // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L304
+                geometry[left.edge.id] = new_edge;
+                opt_left.replace(EdgeScanResult {
+                    cursor: left.cursor,
+                    edge: new_edge,
+                    side: left.side,
+                });
+                emit_info!(
+                    fmt:"left strictly contains scanline, so performed a split: {:?}\n" |
+                    debug_with(|f| self.debug(f, geometry, opt_left, opt_right))
+                );
+                new_edge
+            } else {
+                left.edge
+            };
 
-            if right.strictly_contains_scanline(geometry, self.scanline) {
-                right = self.split_edge(geometry, right.id, Side::Right);
-            }
+            right.edge = if right
+                .scanline_strictly_inside(geometry, self.scanline)
+            {
+                // Based on:
+                // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L309-L313
+                let new_edge =
+                    self.split_edge(geometry, right.edge.id, Side::Right);
+                // Based on:
+                // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L314
+                geometry[right.edge.id] = new_edge;
+                opt_right.replace(EdgeScanResult {
+                    cursor: right.cursor,
+                    edge: new_edge,
+                    side: right.side,
+                });
+                emit_info!(
+                    fmt:"right strictly contains scanline, so performed a split: {:?}" |
+                    debug_with(|f| self.debug(f, geometry, opt_left, opt_right))
+                );
+                new_edge
+            } else {
+                right.edge
+            };
 
-            rects.push(Rect::new(
-                left.source(geometry).point,
-                right.source(geometry).point,
-            ));
+            // Based on:
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L317
+            let rect = Rect::new(
+                left.edge.source(geometry).point,
+                right.edge.source(geometry).point,
+            );
+            emit_info!(
+                fmt:"pushing rect: {:?}" | rect
+            );
+            rects.push(rect);
         }
         rects
     }
@@ -208,18 +393,31 @@ impl Decomposer {
     fn split_edge(
         &mut self,
         geometry: &mut Geometry,
-        existing_edge_id: EdgeId,
+        input_edge_id: EdgeId,
         side: Side,
     ) -> Edge {
         // "split intersected edge"
-        let existing_node_id = match side {
-            Side::Left => geometry[existing_edge_id].source,
-            Side::Right => geometry[existing_edge_id].target,
-        };
-        let existing_x = geometry[existing_node_id].x();
+        // Based on (for left edge):
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L299-304
+        // Based on (for right  edge): https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#309-314
 
-        // Based on: https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L300
-        // confirm that the edge should not be added to active nodes list
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L299
+        // and  https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L309
+        // existing corresponds to u (left)/w (right) in the original code
+        let input_node_id = match side {
+            Side::Left => geometry[input_edge_id].source,
+            Side::Right => geometry[input_edge_id].target,
+        };
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L300
+        //  https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L310
+        let existing_x = geometry[input_node_id].x();
+
+        // Based on:
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L300
+        //  https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L310
+        // TODO: confirm that the edge should not be added to active nodes list
         let new_node_id = geometry.new_node(
             Point::new(existing_x, self.scanline),
             None,
@@ -228,18 +426,36 @@ impl Decomposer {
 
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L301-L303
+        // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L311-L314
         match side {
             Side::Left => {
-                geometry[existing_edge_id].set_source(new_node_id);
-                geometry[existing_node_id].take_out_edge();
-                geometry[new_node_id].set_out_edge(existing_edge_id);
-                geometry.new_edge(existing_node_id, new_node_id, side)
+                // input edge gets its source replaced by new node
+                geometry[input_edge_id].set_source(new_node_id);
+                // input node (source of input edge) has its outgoing edge (the
+                // input edge) deleted
+                geometry[input_node_id].take_out_edge();
+                // new node has its outgoing edge set to the input_edge
+                geometry[new_node_id].set_out_edge(input_edge_id);
+                // insert a new edge into the geometry edge list
+                // TODO: (Note: we do not add it to the active edge list, since
+                // we do not want to split it? No: it's because we will call
+                // add_edges again later, that should manage adding in new edges
+                // into the active edge list, if it still needs to be split.)
+                geometry.new_edge(input_node_id, new_node_id, side)
             }
             Side::Right => {
-                geometry[existing_edge_id].set_source(new_node_id);
-                geometry[existing_node_id].take_in_edge();
-                geometry[new_node_id].set_inc_edge(existing_edge_id);
-                geometry.new_edge(new_node_id, existing_node_id, side)
+                // input edge gets its target replaced by new node
+                geometry[input_edge_id].set_target(new_node_id);
+                // input node (target of input edge) has its incoming edge
+                // (the input edge) deleted
+                geometry[input_node_id].take_inc_edge();
+                // new node has its incoming edge set to be the input edge
+                geometry[new_node_id].set_inc_edge(input_edge_id);
+                // TODO: (Note: we do not add it to the active edge list, since
+                // we do not want to split it? No: it's because we will call
+                // add_edges again later, that should manage adding in new edges
+                // into the active edge list, if it still needs to be split.)
+                geometry.new_edge(new_node_id, input_node_id, side)
             }
         }
     }
@@ -257,14 +473,19 @@ impl Decomposer {
         // The original has to reset the cursor in order to make it point to the
         // begining of the active edges vector again. We do not need to do this,
         // as we can just iterate over the entire vector.
-        info!("active edges before purge: {:?}", &self.active_edges);
+        emit_info!(
+            fmt:"state before purging active edges: {:?}" |
+            debug_with(|f| self.debug(f, geometry, None, None))
+        );
         // We should retain if contains_y returns true, otherwise should purge
         self.active_edges.retain_if(|&id| {
             geometry[id].contains_scanline(geometry, self.scanline)
         });
-        info!("active edges after purge: {:?}", &self.active_edges);
-        info!("post-purge cursor: {}", self.active_edges.cursor());
-        // PURGE_ACTIVE_EDGES
+        emit_info!(
+            fmt:"state after purging active edges: {:?}" |
+            debug_with(|f| self.debug(f, geometry, None, None))
+        );
+        // TODO: PURGE_ACTIVE_EDGES
         // Now that we have purged this edge iterator, its cursor is invalid.
         // The original code is set up so that `add_edges` is called next
         // if the scan/decompose loop still runs. The first thing `add_edges`
@@ -309,29 +530,53 @@ impl Decomposer {
             // Based on (see also, by CTRL+F for "SCANLINE_COMMENT" below):
             // DECOMP_SCANLINE_UPDATE https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L215
             decomposer.update_scanline(&geometry);
-            info!("updated scanline: {:?}", decomposer.scanline);
+            // Based on (but purges must happen *after* the scanline has been
+            // updated, and in our case, we need to update the scanline first,
+            // because we do not do: https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L205):
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L216
+            decomposer.purge_active_edges(&geometry);
             // Based on:
             // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L208
             decomposer.add_active_edges(&geometry);
-            info!("active_edges: {:?}", &decomposer.active_edges);
+            emit_info!(
+                fmt:"state after adding active edges: {:?}" |
+                debug_with(|f| decomposer.debug(f, &geometry, None, None))
+            );
 
             rects = decomposer.scan_edges(&mut geometry, rects);
+            emit_info!(
+                fmt:"state after scanning edges: {:?}" |
+                debug_with(|f| decomposer.debug(f, &geometry, None, None))
+            );
 
             if decomposer.active_nodes.finished() {
                 break;
-            } else {
-                // TODO: do we need something that does what line 214 does?:
-                // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L214
-                // Answer: I don't think so, because it's manually advancing the
-                // iterator pointer, which we do not need to do? However, we
-                // should make sure that updating of the scanline happens first
-                // in the loop (SCANLINE_COMMENT)
-
-                // Based on:
-                // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L216
-                decomposer.purge_active_edges(&geometry);
             }
+            // TODO: do we need something that does what line 214 does?:
+            // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L214
+            // Answer: I don't think so, because it's manually advancing the
+            // iterator pointer, which we do not need to do? However, we
+            // should make sure that updating of the scanline happens first
+            // in the loop (SCANLINE_COMMENT)
         }
         Ok(rects)
+    }
+
+    pub fn debug(
+        &self,
+        f: &mut fmt::Formatter,
+        geometry: &Geometry,
+        left: Option<EdgeScanResult>,
+        right: Option<EdgeScanResult>,
+    ) -> fmt::Result {
+        writeln!(f, "Decomposer {{")?;
+        debug_with(|f| debug_active_nodes(f, geometry, &self.active_nodes));
+        writeln!(f)?;
+        debug_with(|f| {
+            debug_active_edges(f, geometry, &self.active_edges, left, right)
+        });
+        writeln!(f)?;
+        writeln!(f, "\tscanline: {},", self.scanline)?;
+        writeln!(f, "}}")
     }
 }

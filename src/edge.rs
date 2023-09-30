@@ -11,6 +11,11 @@ use crate::{
 pub type EdgeId = Id<Edge>;
 impl GeometricId for EdgeId {
     type Item = Edge;
+
+    #[inline]
+    fn index(&self) -> usize {
+        self.index()
+    }
 }
 
 /// An edge from source to target.
@@ -26,7 +31,7 @@ impl Debug for Edge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Edge[{}](src({})->tgt({}), {:?})",
+            "Edge[{}](src[{}]->tgt[{}], {:?})",
             self.id.index(),
             self.source.index(),
             self.target.index(),
@@ -49,6 +54,11 @@ impl Edge {
             target,
             side,
         }
+    }
+
+    #[inline]
+    pub fn id(self) -> EdgeId {
+        self.id
     }
 
     #[inline]
@@ -103,7 +113,7 @@ impl Edge {
     /// current scanline. Here, strictly means that the scanline does not
     /// correspond pass through one of the end points of the edges.
     #[inline]
-    pub fn strictly_contains_scanline(
+    pub fn scanline_strictly_inside(
         &self,
         geometry: &Geometry,
         scanline: isize,
