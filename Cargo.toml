@@ -11,6 +11,10 @@ path = "src/lib.rs"
 name = "odb_poly_decomp"
 path = "src/main.rs"
 
+[[bin]]
+name = "colortest"
+path = "src/colortest.rs"
+
 [dependencies]
 id-arena = "2.2.1"
 itertools = "0.11.0"
