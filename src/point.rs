@@ -1,4 +1,4 @@
-use std::{cmp::Ordering, fmt::Debug};
+use std::cmp::Ordering;
 
 use crate::geometry::Side;
 
@@ -6,12 +6,6 @@ use crate::geometry::Side;
 pub struct Point {
     pub x: isize,
     pub y: isize,
-}
-
-impl Debug for Point {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Point({},{})", self.x, self.y)
-    }
 }
 
 impl Point {
@@ -48,7 +42,7 @@ impl PartialEq for Point {
 }
 
 // We are purposefully overriding partial_cmp
-#[allow(clippy::incorrect_partial_ord_impl_on_ord_type)]
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for Point {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         // POINT_PARTIAL_CMP
@@ -67,16 +61,14 @@ impl PartialOrd for Point {
         //
         // Deciphering this arcane bullshit closely (seriously, what was math
         // notation invented for if not to express exactly stuff like this with
-        // care?).
-        //
-        // For any `0 <= k < n < vec.len()`, comp(vec[n], vec[k]) is false.
-        // Put differently. (vec[n] < vec[k]) is false. In other words, we are
-        // ordering elements in a "non-decreasing" (i.e. increasing or equal)
-        // order See now the definition comment below.
+        // care?): For any `0 <= k < n < vec.len()`, comp(vec[n], vec[k]) is
+        // false. Put differently. (vec[n] < vec[k]) is false. In other words,
+        // we are ordering elements in a "non-decreasing" (i.e. increasing or
+        // equal) order See now the definition comment below.
 
         // Definition is based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L71
-        // Okay, so we see here that the NodeCompare returns if self.y <
+        // Okay, so we see here that the NodeCompare returns true if self.y <
         // other.y, Otherwise, it returns false. So, we should be ordering
         // elements by least to greatest (in terms of y). Check
         // sorted_active_nodes trace to check that this is happening.

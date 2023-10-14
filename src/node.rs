@@ -1,6 +1,5 @@
 use id_arena::Id;
 use std::cmp::Ordering;
-use std::fmt::Debug;
 
 use crate::{
     edge::EdgeId,
@@ -21,27 +20,8 @@ impl GeometricId for NodeId {
 pub struct Node {
     pub id: NodeId,
     pub point: Point,
-    inc_edge: Option<EdgeId>,
-    out_edge: Option<EdgeId>,
-}
-
-impl Debug for Node {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Node[{}](inc({})->{:?}->out({}))",
-            self.id.index(),
-            match self.inc_edge {
-                Some(id) => format!("Some({})", id.index()),
-                None => "None".to_string(),
-            },
-            self.point,
-            match self.out_edge {
-                Some(id) => format!("Some({})", id.index()),
-                None => "None".to_string(),
-            }
-        )
-    }
+    pub inc_edge: Option<EdgeId>,
+    pub out_edge: Option<EdgeId>,
 }
 
 impl Node {

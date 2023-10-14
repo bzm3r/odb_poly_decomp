@@ -103,12 +103,17 @@ where
     fn finished(&self) -> bool {
         self.len() == self.cursor()
     }
+
+    #[inline]
+    fn is_empty(&self) -> bool {
+        self.items().is_empty()
+    }
 }
 
 #[derive(Clone, Default)]
 pub struct ActiveNodes {
-    nodes: Vec<Id<Node>>,
-    cursor: Cursor,
+    pub nodes: Vec<Id<Node>>,
+    pub cursor: Cursor,
 }
 
 impl ActiveNodes {
@@ -156,6 +161,10 @@ impl ActiveVec for ActiveNodes {
         }
     }
 
+    fn len(&self) -> usize {
+        self.items().len()
+    }
+
     // fn debug<'a>(&self, ) -> String {
     //     self.active_nodes
     //         .items()
@@ -179,11 +188,15 @@ impl ActiveVec for ActiveNodes {
 #[derive(Clone, Default)]
 pub struct ActiveEdges {
     pub edges: Vec<EdgeId>,
-    cursor: Cursor,
+    pub cursor: Cursor,
 }
 
 impl ActiveEdges {
-    fn maybe_insert(&mut self, geometry: &Geometry, edge_id: Option<EdgeId>) {
+    pub fn maybe_insert(
+        &mut self,
+        geometry: &Geometry,
+        edge_id: Option<EdgeId>,
+    ) {
         if let Some(id) = edge_id {
             self.insert(geometry, id);
         }

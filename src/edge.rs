@@ -27,19 +27,6 @@ pub struct Edge {
     pub side: Side,
 }
 
-impl Debug for Edge {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "Edge[{}](src[{}]->tgt[{}], {:?})",
-            self.id.index(),
-            self.source.index(),
-            self.target.index(),
-            self.side
-        )
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Containment {
     Strict, /* "contains_y": https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L105 */
@@ -47,12 +34,12 @@ pub enum Containment {
 }
 
 impl Edge {
-    pub fn new(id: EdgeId, source: NodeId, target: NodeId, side: Side) -> Self {
+    pub fn new(id: EdgeId, source: NodeId, target: NodeId, ty: Side) -> Self {
         Self {
             id,
             source,
             target,
-            side,
+            side: ty,
         }
     }
 
