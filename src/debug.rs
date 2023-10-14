@@ -261,7 +261,7 @@ pub fn debug_node<'a>(
         )?;
         write!(
             f,
-            "\n      {:?}\n    {}\n        {:?}",
+            "  {:?}  {}  {:?}",
             dbg_edge_incident!(
                 geometry,
                 node.inc_edge,
@@ -291,7 +291,7 @@ pub fn debug_node_endpoint(
             "{}{}",
             STYLE_LABEL.paint(format_args!("N{}:", node.id.index())),
             format_args!(
-                "{}->{}->{}",
+                " {} -> {} ->{}",
                 node.inc_edge
                     .map(|e| e.index().to_string())
                     .unwrap_or("_".to_string()),

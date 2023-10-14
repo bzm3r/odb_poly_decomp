@@ -48,6 +48,7 @@ pub struct EdgeScans {
     rc: Option<Cursor>,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub enum ScanResult {
     ReturnRects,
     ContinueLoop(EdgeScans),
@@ -56,11 +57,23 @@ pub enum ScanResult {
 }
 
 macro_rules! check_return {
-    ($scan_result:expr) => {
-        match $scan_result {
-            ScanResult::ContinueSplit(s) => s,
-            r => {
-                return r;
+    ($msg:literal, $geometry:expr, $active_edges:expr, $self:expr, $operation:expr) => {
+        {
+            let result = $operation;
+            emit_info!(sty:Color::Blue,
+                fmt:"{}: {:#?}\n" | $msg,
+                dbg_active_edges!($geometry, $active_edges, &$self)
+            );
+            info!("{:#?}", &$self);
+            match result {
+                ScanResult::ContinueSplit(s) => {
+                    info!("{}", COLOR_ORANGE.paint("continuing split..."));
+                    s
+                },
+                r => {
+                    emit_info!(sty:COLOR_ORANGE, fmt:"returning {:?}..." | r);
+                    return r;
+                }
             }
         }
     };
@@ -105,6 +118,8 @@ impl EdgeScans {
         // reached the end), then this function will return `None`, upon which
         // scan edges will also return.
 
+        // This essentially finds the left edge with the largest index in the
+        // active edges list.
         while let Some(edge) = active_edges.next(geometry) {
             // Based on:
             // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L273-L276
@@ -117,7 +132,9 @@ impl EdgeScans {
             }
         }
 
-        // TODO: if active edges finished, return with ReturnRects
+        if active_edges.finished() {
+            return ScanResult::ReturnRects;
+        }
 
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L279-L290
@@ -150,7 +167,7 @@ impl EdgeScans {
     #[inline]
     pub fn re(&self) -> &Edge {
         self.re.as_ref().expect(
-            "expect to have found some right edge if calling `le` method",
+            "expect to have found some right edge if calling `re` method",
         )
     }
 
@@ -198,22 +215,21 @@ impl EdgeScans {
     ) -> ScanResult {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L265-L277
-        self = check_return!(self.scan_for_edges(
-            active_edges,
-            scanline,
-            geometry
-        ));
-
-        emit_info!(sty:Color::Blue,
-            fmt:"after scanning for edges: {:#?}\n" |
-            dbg_active_edges!(geometry, active_edges, &self)
-        );
-
-        self = check_return!(self.check_both_splittable(
+        self = check_return!(
+            "after scanning for edges",
             geometry,
             active_edges,
-            scanline
-        ));
+            self,
+            self.scan_for_edges(active_edges, scanline, geometry)
+        );
+
+        self = check_return!(
+            "after checking if both are splittable",
+            geometry,
+            active_edges,
+            self,
+            self.check_both_splittable(geometry, active_edges, scanline)
+        );
 
         if self.le().scanline_strictly_inside(geometry, scanline) {
             // Based on:
@@ -305,7 +321,14 @@ impl Decomposer {
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L224
         // See also the comment by CTRL+F for PURGE_ACTIVE_EDGES
         self.active_edges.reset_cursor();
-        info!("active_edges_cursor: {:?}", self.active_edges.cursor());
+        info!(
+            "{}{}",
+            Style::new().fg(Color::Red).paint("SCANLINE: "),
+            Style::new()
+                .fg(Color::White)
+                .bold()
+                .paint(format_args!("{}", self.scanline))
+        );
 
         // Based on: 1) iterate on active_nodes, based on wherever it is
         // currently and 2) if the current does not not lie on the scanline,
@@ -339,7 +362,7 @@ impl Decomposer {
         }
     }
 
-    fn scan_edges(
+    fn scan_and_split(
         &mut self,
         geometry: &mut Geometry,
         mut rects: Vec<Rect>,
@@ -352,8 +375,8 @@ impl Decomposer {
         let mut edge_scan = EdgeScans::default();
 
         while !self.active_edges.finished() {
-            emit_info!(sty:COLOR_ORANGE,
-                fmt:"initial state: {:#?}\n" |
+            emit_info!(sty:COLOR_ORANGE.bold(),
+                fmt:"INITIAL STATE (split loop): {:#?}\n" |
                 dbg_decomposer!(self, geometry, Some(&edge_scan))
             );
 
@@ -466,11 +489,7 @@ impl Decomposer {
                 dbg_decomposer!(&decomposer, &geometry, None)
             );
 
-            rects = decomposer.scan_edges(&mut geometry, rects);
-            emit_info!(
-                fmt:"state after scanning edges: {:#?}" |
-                dbg_decomposer!(&decomposer, &geometry, None)
-            );
+            rects = decomposer.scan_and_split(&mut geometry, rects);
 
             if decomposer.active_nodes.finished() {
                 break;

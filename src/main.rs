@@ -9,7 +9,9 @@ pub fn main() {
         // sets this to be the default, global collector for this application.
         .init();
 
-    let points: Vec<Point> = [(0, 0), (2, 0), (2, 2), (1, 2), (1, 1), (0, 1)]
+    // CCW: [(0, 0), (2, 0), (2, 2), (1, 2), (1, 1), (0, 1)]
+    // CW : [(0, 0), (0, 1), (1, 1), (1, 2), (2, 2), (2, 0)]
+    let points: Vec<Point> = [(0, 0), (0, 1), (1, 1), (1, 2), (2, 2), (2, 0)]
         .into_iter()
         .map(|(x, y)| Point::new(x, y))
         .collect();
