@@ -3,7 +3,7 @@ use std::cmp::Ordering;
 
 use crate::{
     edge::EdgeId,
-    geometry::{GeometricId, Side},
+    geometry::{EdgeTy, GeometricId},
     point::Point,
 };
 
@@ -57,7 +57,7 @@ impl Node {
     }
 
     #[inline]
-    pub fn which_side(&self, other: &Node) -> Option<Side> {
+    pub fn which_side(&self, other: &Node) -> Option<EdgeTy> {
         self.point.which_side(&other.point)
     }
 

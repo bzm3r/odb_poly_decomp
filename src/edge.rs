@@ -4,7 +4,7 @@ use id_arena::Id;
 use tracing::info;
 
 use crate::{
-    geometry::{GeometricId, Geometry, Side},
+    geometry::{EdgeTy, GeometricId, Geometry},
     node::{Node, NodeId},
 };
 
@@ -24,7 +24,7 @@ pub struct Edge {
     pub id: EdgeId,
     pub source: NodeId,
     pub target: NodeId,
-    pub side: Side,
+    pub ty: EdgeTy,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,12 +34,12 @@ pub enum Containment {
 }
 
 impl Edge {
-    pub fn new(id: EdgeId, source: NodeId, target: NodeId, ty: Side) -> Self {
+    pub fn new(id: EdgeId, source: NodeId, target: NodeId, ty: EdgeTy) -> Self {
         Self {
             id,
             source,
             target,
-            side: ty,
+            ty,
         }
     }
 

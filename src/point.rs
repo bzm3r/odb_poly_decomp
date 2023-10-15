@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use crate::geometry::Side;
+use crate::geometry::EdgeTy;
 
 #[derive(Clone, Copy, Default)]
 pub struct Point {
@@ -15,7 +15,7 @@ impl Point {
     }
 
     #[inline]
-    pub fn which_side(&self, other: &Point) -> Option<Side> {
+    pub fn which_side(&self, other: &Point) -> Option<EdgeTy> {
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L188
 
@@ -28,9 +28,9 @@ impl Point {
         // Matching LEFT/RIGHT walls can "see each other", without being
         // visibility being blocked?
         match self.y.cmp(&other.y) {
-            Ordering::Less => Some(Side::Left),
+            Ordering::Less => Some(EdgeTy::Left),
             Ordering::Equal => None,
-            Ordering::Greater => Some(Side::Right),
+            Ordering::Greater => Some(EdgeTy::Right),
         }
     }
 }

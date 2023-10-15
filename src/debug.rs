@@ -6,9 +6,10 @@ use std::fmt;
 use crate::{
     active::ActiveEdges,
     active::{ActiveNodes, ActiveVec},
-    decomposer::{Decomposer, EdgeScans},
+    decomposer::Decomposer,
     edge::{Edge, EdgeId},
-    geometry::{Geometry, Side},
+    edge_scans::EdgeScans,
+    geometry::{EdgeTy, Geometry},
     node::Node,
     point::Point,
 };
@@ -84,14 +85,14 @@ macro_rules! item_dbg {
     };
 }
 
-impl fmt::Debug for Side {
+impl fmt::Debug for EdgeTy {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
             "{}",
             match self {
-                Side::Left => "L",
-                Side::Right => "R",
+                EdgeTy::Left => "L",
+                EdgeTy::Right => "R",
             }
         )
     }
@@ -113,7 +114,7 @@ pub fn debug_edge<'a>(
         write!(
             f,
             "{}",
-            STYLE_LABEL.paint(format!("{:?}E{}:", edge.side, edge.id.index()))
+            STYLE_LABEL.paint(format!("{:?}E{}:", edge.ty, edge.id.index()))
         )?;
         write!(
             f,
@@ -173,7 +174,7 @@ fn debug_edge_incident(
                         "{}",
                         STYLE_LABEL.paint(format!(
                             "{:?}E{}:",
-                            edge.side,
+                            edge.ty,
                             edge.id.index()
                         ))
                     )?;
@@ -200,7 +201,7 @@ fn debug_edge_incident(
                         "{}",
                         STYLE_LABEL.paint(format!(
                             ":{:?}E{}",
-                            edge.side,
+                            edge.ty,
                             edge.id.index()
                         ))
                     )
@@ -222,7 +223,7 @@ impl fmt::Debug for Edge {
         write!(
             f,
             "{:?}({}--{})",
-            self.side,
+            self.ty,
             type_id!("s", self.source),
             type_id!("t", self.target),
         )
@@ -460,8 +461,8 @@ pub fn debug_active_edges<'a>(
                     let edge_tag =
                         match edge_scans.and_then(|es| es.matches_edge(id)) {
                             Some(side) => match side {
-                                Side::Left => LEFT_SCAN_EDGE.paint("le:"),
-                                Side::Right => RIGHT_SCAN_EDGE.paint("re:"),
+                                EdgeTy::Left => LEFT_SCAN_EDGE.paint("le:"),
+                                EdgeTy::Right => RIGHT_SCAN_EDGE.paint("re:"),
                             },
                             None => Style::new().paint(""),
                         };
@@ -469,8 +470,8 @@ pub fn debug_active_edges<'a>(
                     let cursor_tag =
                         match edge_scans.and_then(|es| es.matches_cursor(ix)) {
                             Some(side) => match side {
-                                Side::Left => LEFT_SCAN_EDGE.paint("lc:"),
-                                Side::Right => RIGHT_SCAN_EDGE.paint("rc:"),
+                                EdgeTy::Left => LEFT_SCAN_EDGE.paint("lc:"),
+                                EdgeTy::Right => RIGHT_SCAN_EDGE.paint("rc:"),
                             },
                             None => Style::new().paint(""),
                         };

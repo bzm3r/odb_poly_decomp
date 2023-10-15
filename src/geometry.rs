@@ -52,7 +52,7 @@ where
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Side {
+pub enum EdgeTy {
     Left,
     Right,
 }
@@ -82,7 +82,7 @@ impl Geometry {
         &mut self,
         source: NodeId,
         target: NodeId,
-        ty: Side,
+        ty: EdgeTy,
     ) -> Edge {
         let new_edge_id = self
             .edges
@@ -201,10 +201,10 @@ impl Geometry {
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L299
         // and  https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L309
         // existing corresponds to u (left)/w (right) in the original code
-        let side = self[split_target].side;
+        let side = self[split_target].ty;
         let input_node = match side {
-            Side::Left => self[split_target].source,
-            Side::Right => self[split_target].target,
+            EdgeTy::Left => self[split_target].source,
+            EdgeTy::Right => self[split_target].target,
         };
         // Based on:
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L300
@@ -222,7 +222,7 @@ impl Geometry {
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L301-L303
         // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L311-L314
         match side {
-            Side::Left => {
+            EdgeTy::Left => {
                 // input edge gets its source replaced by new node
                 self[split_target].set_source(new_node_id);
                 // input node (source of input edge) has its outgoing edge (the
@@ -239,7 +239,7 @@ impl Geometry {
                 // https://github.com/bzm3r/OpenROAD/blob/ecc03c290346823a66fec78669dacc8a85aabb05/src/odb/src/zutil/poly_decomp.cpp#L304
                 self.new_edge(input_node, new_node_id, side)
             }
-            Side::Right => {
+            EdgeTy::Right => {
                 // input edge gets its target replaced by new node
                 self[split_target].set_target(new_node_id);
                 // input node (target of input edge) has its incoming edge
